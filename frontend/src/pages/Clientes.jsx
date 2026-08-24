@@ -2,10 +2,18 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import api from '@/lib/api'
 import { cn, formatCurrency, formatCPF, validateCPF, formatPhone } from '@/lib/utils'
+import FormField from '@/components/FormField'
+import DocumentosSection from '@/components/DocumentosSection'
 import {
   Plus, Users, Pencil, Trash2, X, ChevronDown, ChevronUp,
-  Search, PieChart, Upload, FileText, Eye,
+  Search, PieChart,
 } from 'lucide-react'
+
+const TIPOS_DOC_CLIENTE = [
+  { key: 'contrato', label: 'Contrato' },
+  { key: 'cnh', label: 'CNH' },
+  { key: 'comprovante_endereco', label: 'Comprovante de Endereco' },
+]
 
 export default function Clientes() {
   const { hasPermission } = useAuth()
@@ -23,11 +31,6 @@ export default function Clientes() {
   const canDelete = hasPermission('clientes', 'excluir')
   const canViewPercentuais = hasPermission('percentuais', 'visualizar')
   const canEditPercentuais = hasPermission('percentuais', 'criar')
-
-  useEffect(() => {
-    loadClientes()
-    loadUsinas()
-  }, [])
 
   async function loadClientes() {
     setLoading(true)
@@ -50,6 +53,10 @@ export default function Clientes() {
       console.error('Erro ao carregar usinas:', err)
     }
   }
+
+  useEffect(() => {
+    loadUsinas()
+  }, [])
 
   useEffect(() => { loadClientes() }, [filtroUsina])
 
@@ -230,7 +237,7 @@ export default function Clientes() {
                         <p className="text-sm text-dark-700 mt-0.5">{cliente.pix}</p>
                       </div>
                     )}
-                    <ClienteDocumentosSection clienteId={cliente.id} canEdit={canEdit} canDelete={canDelete} />
+                    <DocumentosSection entityIdField="cliente_id" entityId={cliente.id} tipos={TIPOS_DOC_CLIENTE} canEdit={canEdit} canDelete={canDelete} />
                     {/* Percentuais */}
                     {canViewPercentuais && (
                       <PercentualSection
@@ -462,23 +469,6 @@ function ClienteForm({ cliente, usinas, onClose, onSaved }) {
   )
 }
 
-function FormField({ label, value, onChange, type = 'text', placeholder, required }) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-dark-600 mb-1">{label}</label>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full px-4 py-2.5 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50"
-        placeholder={placeholder}
-        required={required}
-        step={type === 'number' ? 'any' : undefined}
-      />
-    </div>
-  )
-}
-
 function PercentualSection({ clienteId, usinaId, canEdit }) {
   const [percentuais, setPercentuais] = useState([])
   const [loading, setLoading] = useState(true)
@@ -585,113 +575,6 @@ function PercentualSection({ clienteId, usinaId, canEdit }) {
                 {idx === 0 ? 'Vigente desde ' : 'De '}
                 {new Date(p.data_vigencia).toLocaleDateString('pt-BR')}
               </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-function ClienteDocumentosSection({ clienteId, canEdit, canDelete }) {
-  const TIPOS_DOC = [
-    { key: 'contrato', label: 'Contrato' },
-    { key: 'cnh', label: 'CNH' },
-    { key: 'comprovante_endereco', label: 'Comprovante de Endereco' },
-  ]
-
-  const [docs, setDocs] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState(false)
-  const [tipoUpload, setTipoUpload] = useState('')
-
-  useEffect(() => { loadDocs() }, [clienteId])
-
-  async function loadDocs() {
-    setLoading(true)
-    try {
-      const { data } = await api.get('/documentos/?cliente_id=' + clienteId)
-      setDocs(data)
-    } catch (err) {
-      console.error('Erro:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function handleUpload(e) {
-    const file = e.target.files[0]
-    if (!file || !tipoUpload) return
-    setUploading(true)
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('tipo', tipoUpload)
-      formData.append('cliente_id', clienteId)
-      await api.post('/documentos/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
-      setTipoUpload('')
-      await loadDocs()
-    } catch (err) {
-      alert(err.response?.data?.detail || 'Erro no upload')
-    } finally {
-      setUploading(false)
-      e.target.value = ''
-    }
-  }
-
-  async function handleDelete(docId) {
-    if (!confirm('Excluir este documento?')) return
-    try {
-      await api.delete('/documentos/' + docId)
-      await loadDocs()
-    } catch (err) {
-      alert('Erro ao excluir')
-    }
-  }
-
-  const tipoLabel = (tipo) => {
-    const found = TIPOS_DOC.find((t) => t.key === tipo)
-    return found ? found.label : tipo
-  }
-
-  return (
-    <div className="mt-5">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-dark-700">Documentos</h3>
-        {canEdit && (
-          <div className="flex items-center gap-2">
-            <select value={tipoUpload} onChange={(e) => setTipoUpload(e.target.value)}
-              className="px-2 py-1.5 rounded-lg border border-dark-300 text-xs focus:outline-none focus:ring-2 focus:ring-solar-500/50">
-              <option value="">Tipo</option>
-              {TIPOS_DOC.map((t) => (<option key={t.key} value={t.key}>{t.label}</option>))}
-            </select>
-            <label className={cn(
-              'flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition',
-              tipoUpload ? 'bg-solar-500 text-dark-900 hover:bg-solar-600' : 'bg-dark-200 text-dark-400 cursor-not-allowed'
-            )}>
-              Upload
-              <input type="file" className="hidden" onChange={handleUpload} disabled={!tipoUpload || uploading} accept=".pdf,.jpg,.jpeg,.png" />
-            </label>
-          </div>
-        )}
-      </div>
-      {loading ? (
-        <p className="text-sm text-dark-400">Carregando...</p>
-      ) : docs.length === 0 ? (
-        <p className="text-sm text-dark-400">Nenhum documento enviado</p>
-      ) : (
-        <div className="space-y-2">
-          {docs.map((doc) => (
-            <div key={doc.id} className="flex items-center justify-between p-2 bg-dark-50 rounded-lg">
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-dark-700">{doc.nome_arquivo}</span>
-                <span className="text-xs text-dark-400">{tipoLabel(doc.tipo)}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-xs text-solar-600 hover:text-solar-700">Ver</a>
-                {canDelete && (
-                  <button onClick={() => handleDelete(doc.id)} className="text-xs text-red-400 hover:text-red-600 ml-2">Excluir</button>
-                )}
-              </div>
             </div>
           ))}
         </div>

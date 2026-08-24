@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from app.core.auth import require_permission
 from app.core.supabase import get_supabase_admin
+from app.schemas.despesas import DespesaCreate
 
 router = APIRouter()
 
@@ -20,10 +21,12 @@ async def list_despesas(
 
 @router.post("/")
 async def create_despesa(
-    data: dict,
+    req: DespesaCreate,
     user: dict = Depends(require_permission("despesas", "criar")),
 ):
     sb = get_supabase_admin()
+    data = req.model_dump()
+    data["mes_referencia"] = str(data["mes_referencia"])
     result = sb.table("despesas").insert(data).execute()
     return result.data[0]
 

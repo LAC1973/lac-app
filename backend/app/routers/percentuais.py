@@ -23,20 +23,27 @@ async def list_percentuais_usina(
         .execute()
     )
 
+    cliente_ids = [c["id"] for c in clientes.data or []]
+
+    percentual_map = {}
+    if cliente_ids:
+        percs = (
+            sb.table("percentuais")
+            .select("*")
+            .in_("cliente_id", cliente_ids)
+            .eq("usina_id", usina_id)
+            .order("data_vigencia", desc=True)
+            .execute()
+        )
+        for p in percs.data or []:
+            # ordenado por data_vigencia desc: o primeiro visto por cliente é o vigente
+            percentual_map.setdefault(p["cliente_id"], p)
+
     resultado = []
     soma = 0
 
     for cliente in clientes.data or []:
-        perm = (
-            sb.table("percentuais")
-            .select("*")
-            .eq("cliente_id", cliente["id"])
-            .eq("usina_id", usina_id)
-            .order("data_vigencia", desc=True)
-            .limit(1)
-            .execute()
-        )
-        percentual_vigente = perm.data[0] if perm.data else None
+        percentual_vigente = percentual_map.get(cliente["id"])
         valor = percentual_vigente["percentual"] if percentual_vigente else 0
         soma += valor
 
@@ -86,21 +93,25 @@ async def create_percentual(
         .execute()
     )
 
+    outros_ids = [c["id"] for c in clientes.data or [] if c["id"] != req.cliente_id]
+
     soma = 0
-    for cliente in clientes.data or []:
-        if cliente["id"] == req.cliente_id:
-            continue
-        perm = (
+    if outros_ids:
+        percs = (
             sb.table("percentuais")
-            .select("percentual")
-            .eq("cliente_id", cliente["id"])
+            .select("cliente_id, percentual")
+            .in_("cliente_id", outros_ids)
             .eq("usina_id", req.usina_id)
             .order("data_vigencia", desc=True)
-            .limit(1)
             .execute()
         )
-        if perm.data:
-            soma += perm.data[0]["percentual"]
+        vistos = set()
+        for p in percs.data or []:
+            # ordenado por data_vigencia desc: o primeiro visto por cliente é o vigente
+            if p["cliente_id"] in vistos:
+                continue
+            vistos.add(p["cliente_id"])
+            soma += p["percentual"]
 
     if soma + req.percentual > 100.01:
         raise HTTPException(

@@ -143,59 +143,74 @@ async def get_dre(
 
     resultado = {m: {} for m in range(1, 13)}
 
+    primeiro_dia_ano = f"{ano}-01-01"
+    ultimo_dia_ano = f"{ano}-12-01"
+
+    # Separar agregados (não muda por mês, buscar uma única vez)
+    agregados_result = (
+        sb.table("clientes")
+        .select("id")
+        .eq("eh_agregado", True)
+        .execute()
+    )
+    agregado_ids = {a["id"] for a in agregados_result.data or []}
+
+    # A - Receita Bruta (soma de todas as faturas pagas/pendentes) - ano inteiro de uma vez
+    faturas_ano = (
+        sb.table("faturas")
+        .select("valor_final, cliente_id, mes_referencia")
+        .gte("mes_referencia", primeiro_dia_ano)
+        .lte("mes_referencia", ultimo_dia_ano)
+        .execute()
+    )
+    faturas_por_mes = {m: [] for m in range(1, 13)}
+    for f in faturas_ano.data or []:
+        faturas_por_mes[int(f["mes_referencia"].split("-")[1])].append(f)
+
+    # E - Despesas Operacionais - ano inteiro de uma vez
+    despesas_ano = (
+        sb.table("despesas")
+        .select("categoria, subcategoria, valor_mensal, mes_referencia")
+        .gte("mes_referencia", primeiro_dia_ano)
+        .lte("mes_referencia", ultimo_dia_ano)
+        .execute()
+    )
+    despesas_por_mes = {m: [] for m in range(1, 13)}
+    for d in despesas_ano.data or []:
+        despesas_por_mes[int(d["mes_referencia"].split("-")[1])].append(d)
+
+    # F - Financiamentos - ano inteiro de uma vez
+    financiamentos_ano = (
+        sb.table("financiamentos")
+        .select("nome, valor_mensal, mes_referencia")
+        .gte("mes_referencia", primeiro_dia_ano)
+        .lte("mes_referencia", ultimo_dia_ano)
+        .execute()
+    )
+    financiamentos_por_mes = {m: [] for m in range(1, 13)}
+    for fin in financiamentos_ano.data or []:
+        financiamentos_por_mes[int(fin["mes_referencia"].split("-")[1])].append(fin)
+
     for mes in range(1, 13):
-        mes_ref = str(ano) + "-" + str(mes).zfill(2) + "-01"
-
-        # A - Receita Bruta (soma de todas as faturas pagas/pendentes)
-        faturas = (
-            sb.table("faturas")
-            .select("valor_final, cliente_id")
-            .eq("mes_referencia", mes_ref)
-            .execute()
-        )
-
-        # Separar agregados
-        agregados_result = (
-            sb.table("clientes")
-            .select("id")
-            .eq("eh_agregado", True)
-            .execute()
-        )
-        agregado_ids = {a["id"] for a in agregados_result.data or []}
-
         receita_bruta = 0
         valor_agregados = 0
-        for f in faturas.data or []:
+        for f in faturas_por_mes[mes]:
             valor = f.get("valor_final") or 0
             if f["cliente_id"] in agregado_ids:
                 valor_agregados += valor
             else:
                 receita_bruta += valor
 
-        # E - Despesas Operacionais
-        despesas = (
-            sb.table("despesas")
-            .select("categoria, subcategoria, valor_mensal")
-            .eq("mes_referencia", mes_ref)
-            .execute()
-        )
-        total_despesas = sum(d["valor_mensal"] for d in despesas.data or [])
+        total_despesas = sum(d["valor_mensal"] for d in despesas_por_mes[mes])
 
         despesas_por_categoria = {}
-        for d in despesas.data or []:
+        for d in despesas_por_mes[mes]:
             cat = d["categoria"]
             if cat not in despesas_por_categoria:
                 despesas_por_categoria[cat] = 0
             despesas_por_categoria[cat] += d["valor_mensal"]
 
-        # F - Financiamentos
-        financiamentos = (
-            sb.table("financiamentos")
-            .select("nome, valor_mensal")
-            .eq("mes_referencia", mes_ref)
-            .execute()
-        )
-        total_financiamentos = sum(f["valor_mensal"] for f in financiamentos.data or [])
+        total_financiamentos = sum(f["valor_mensal"] for f in financiamentos_por_mes[mes])
 
         # Calculos
         receita_operacional = receita_bruta - valor_agregados

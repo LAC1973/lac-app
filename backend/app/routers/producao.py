@@ -53,20 +53,28 @@ async def get_producao_dia(
     # Buscar todas as usinas com inversores
     usinas = sb.table("usinas").select("*, inversores(*)").order("id").execute()
 
+    todos_inversor_ids = [
+        inv["id"] for usina in usinas.data or [] for inv in usina.get("inversores", [])
+    ]
+
+    producao_map = {}
+    if todos_inversor_ids:
+        prod = (
+            sb.table("producao_diaria")
+            .select("inversor_id, producao_kwh")
+            .in_("inversor_id", todos_inversor_ids)
+            .eq("data", str(data))
+            .execute()
+        )
+        producao_map = {r["inversor_id"]: r["producao_kwh"] for r in prod.data or []}
+
     resultado = []
     for usina in usinas.data or []:
         inversores_producao = []
         total_usina = 0
 
         for inv in usina.get("inversores", []):
-            prod = (
-                sb.table("producao_diaria")
-                .select("*")
-                .eq("inversor_id", inv["id"])
-                .eq("data", str(data))
-                .execute()
-            )
-            kwh = prod.data[0]["producao_kwh"] if prod.data else None
+            kwh = producao_map.get(inv["id"])
             if kwh:
                 total_usina += kwh
 

@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import api from '@/lib/api'
 import { cn, formatCurrency, formatDate } from '@/lib/utils'
+import { NOMES_MES } from '@/lib/meses'
+import MonthPicker from '@/components/MonthPicker'
 import {
   Plus, FileText, Pencil, Trash2, X, Search,
-  ChevronLeft, ChevronRight, CircleDot, Download, ClipboardList, Upload,
+  CircleDot, Download, ClipboardList, Upload,
 } from 'lucide-react'
 
 const STATUS_CONFIG = {
@@ -99,9 +101,6 @@ export default function Faturas() {
     setMesRef(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-01')
   }
 
-  const nomesMes = ['', 'Janeiro', 'Fevereiro', 'Marco', 'Abril', 'Maio', 'Junho',
-    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
-
   const mesAtual = parseInt(mesRef.split('-')[1])
   const anoAtual = parseInt(mesRef.split('-')[0])
 
@@ -127,17 +126,7 @@ export default function Faturas() {
         )}
       </div>
 
-      <div className="flex items-center justify-center gap-4 mb-6">
-        <button onClick={() => changeMes(-1)} className="p-2 rounded-lg hover:bg-dark-200 transition">
-          <ChevronLeft size={20} />
-        </button>
-        <h2 className="text-lg font-semibold text-dark-900 w-48 text-center">
-          {nomesMes[mesAtual]} {anoAtual}
-        </h2>
-        <button onClick={() => changeMes(1)} className="p-2 rounded-lg hover:bg-dark-200 transition">
-          <ChevronRight size={20} />
-        </button>
-      </div>
+      <MonthPicker mes={mesAtual} ano={anoAtual} onPrev={() => changeMes(-1)} onNext={() => changeMes(1)} />
 
       <div className="grid grid-cols-3 gap-4 mb-4">
         <div className="bg-white rounded-xl p-4 border border-dark-200 shadow-sm">
@@ -436,8 +425,6 @@ function LeiturasModal({ usinaId, mesRef, onClose, onSaved }) {
     }
   }
 
-  const nomesMes = ['', 'Janeiro', 'Fevereiro', 'Marco', 'Abril', 'Maio', 'Junho',
-    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
   const mesNum = parseInt(mesRef.split('-')[1])
 
   return (
@@ -446,7 +433,7 @@ function LeiturasModal({ usinaId, mesRef, onClose, onSaved }) {
         <div className="flex items-center justify-between mb-5">
           <div>
             <h2 className="text-lg font-bold">Preencher Leituras</h2>
-            <p className="text-sm text-dark-500">{nomesMes[mesNum]} {mesRef.split('-')[0]}</p>
+            <p className="text-sm text-dark-500">{NOMES_MES[mesNum]} {mesRef.split('-')[0]}</p>
           </div>
           <button onClick={onClose} className="text-dark-400 hover:text-dark-600"><X size={20} /></button>
         </div>

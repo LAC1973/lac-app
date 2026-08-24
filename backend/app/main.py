@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import auth, users, usinas, inversores, clientes, percentuais, producao, faturas, exportar, leituras, recibos, placas, documentos, energisa, relatorios, despesas, financiamentos
+from app.routers import auth, users, usinas, inversores, clientes, percentuais, producao, faturas, exportar, leituras, recibos, placas, documentos, energisa, relatorios, despesas, financiamentos, dashboard, configuracoes
 app = FastAPI(
     title="LAC Solar API",
     version="1.0.0",
@@ -39,6 +39,8 @@ app.include_router(energisa.router, prefix="/api/energisa", tags=["Energisa"])
 app.include_router(relatorios.router, prefix="/api/relatorios", tags=["Relatorios"])
 app.include_router(despesas.router, prefix="/api/despesas", tags=["Despesas"])
 app.include_router(financiamentos.router, prefix="/api/financiamentos", tags=["Financiamentos"])
+app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
+app.include_router(configuracoes.router, prefix="/api/configuracoes", tags=["Configuracoes"])
 
 @app.get("/api/health")
 async def health_check():

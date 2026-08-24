@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import api from '@/lib/api'
 import { cn } from '@/lib/utils'
+import MonthPicker from '@/components/MonthPicker'
 import { Zap, ChevronLeft, ChevronRight, Check, BarChart3 } from 'lucide-react'
 
 export default function Producao() {
@@ -15,11 +16,16 @@ export default function Producao() {
   const [view, setView] = useState('diario') // 'diario' ou 'mensal'
   const [mensal, setMensal] = useState([])
   const [mesMensal, setMesMensal] = useState({ ano: new Date().getFullYear(), mes: new Date().getMonth() + 1 })
+  const [usinasFiltro, setUsinasFiltro] = useState([])
+  const [filtroUsina, setFiltroUsina] = useState('')
 
   const canCreate = hasPermission('producao', 'criar')
 
   useEffect(() => { loadDia() }, [data])
   useEffect(() => { if (view === 'mensal') loadMensal() }, [view, mesMensal])
+  useEffect(() => {
+    api.get('/usinas/').then(({ data }) => setUsinasFiltro(data)).catch((err) => console.error('Erro:', err))
+  }, [])
 
   function todayStr() {
     const d = new Date()
@@ -109,10 +115,13 @@ export default function Producao() {
     weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'
   })
 
-  const totalGeral = Object.values(valores).reduce((sum, v) => sum + (parseFloat(v) || 0), 0)
+  const usinasVisiveis = filtroUsina ? usinas.filter((u) => String(u.usina_id) === filtroUsina) : usinas
+  const totalFiltrado = usinasVisiveis.reduce(
+    (sum, u) => sum + u.inversores.reduce((s, inv) => s + (parseFloat(valores[inv.inversor_id]) || 0), 0),
+    0
+  )
 
-  const nomesMes = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
+  const mensalVisivel = filtroUsina ? mensal.filter((u) => String(u.usina_id) === filtroUsina) : mensal
 
   return (
     <div>
@@ -143,6 +152,17 @@ export default function Producao() {
             Mensal
           </button>
         </div>
+      </div>
+
+      <div className="flex items-center gap-3 mb-6">
+        <select
+          value={filtroUsina}
+          onChange={(e) => setFiltroUsina(e.target.value)}
+          className="px-4 py-2 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50"
+        >
+          <option value="">Todas as usinas</option>
+          {usinasFiltro.map((u) => (<option key={u.id} value={u.id}>{u.nome}</option>))}
+        </select>
       </div>
 
       {view === 'diario' ? (
@@ -181,7 +201,7 @@ export default function Producao() {
           ) : (
             <>
               <div className="space-y-4">
-                {usinas.map((usina) => {
+                {usinasVisiveis.map((usina) => {
                   const totalUsina = usina.inversores.reduce(
                     (sum, inv) => sum + (parseFloat(valores[inv.inversor_id]) || 0), 0
                   )
@@ -228,8 +248,14 @@ export default function Producao() {
               {/* Footer com total e botão salvar */}
               <div className="sticky bottom-0 mt-4 bg-white rounded-xl border border-dark-200 shadow-lg p-4 flex items-center justify-between">
                 <div>
-                  <span className="text-sm text-dark-500">Total do dia</span>
-                  <p className="text-xl font-bold text-dark-900">{totalGeral.toFixed(1)} kWh</p>
+                  {filtroUsina ? (
+                    <>
+                      <span className="text-sm text-dark-500">Total do dia</span>
+                      <p className="text-xl font-bold text-dark-900">{totalFiltrado.toFixed(1)} kWh</p>
+                    </>
+                  ) : (
+                    <span className="text-sm text-dark-400">Selecione uma usina no filtro para ver o total</span>
+                  )}
                 </div>
                 {canCreate && (
                   <button
@@ -256,26 +282,16 @@ export default function Producao() {
       ) : (
         /* Visão mensal */
         <>
-          <div className="flex items-center justify-center gap-4 mb-6">
-            <button onClick={() => changeMes(-1)} className="p-2 rounded-lg hover:bg-dark-200 transition">
-              <ChevronLeft size={20} />
-            </button>
-            <h2 className="text-lg font-semibold text-dark-900 w-48 text-center">
-              {nomesMes[mesMensal.mes]} {mesMensal.ano}
-            </h2>
-            <button onClick={() => changeMes(1)} className="p-2 rounded-lg hover:bg-dark-200 transition">
-              <ChevronRight size={20} />
-            </button>
-          </div>
+          <MonthPicker mes={mesMensal.mes} ano={mesMensal.ano} onPrev={() => changeMes(-1)} onNext={() => changeMes(1)} />
 
-          {mensal.length === 0 ? (
+          {mensalVisivel.length === 0 ? (
             <div className="bg-white rounded-xl border border-dark-200 p-12 text-center shadow-sm">
               <BarChart3 size={48} className="mx-auto mb-4 text-dark-300" />
               <p className="text-dark-500">Nenhum dado de produção neste mês</p>
             </div>
           ) : (
             <div className="space-y-4">
-              {mensal.map((usina) => (
+              {mensalVisivel.map((usina) => (
                 <div key={usina.usina_id} className="bg-white rounded-xl border border-dark-200 shadow-sm overflow-hidden">
                   <div className="flex items-center justify-between px-5 py-4 border-b border-dark-100">
                     <div className="flex items-center gap-3">

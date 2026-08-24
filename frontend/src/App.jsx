@@ -16,6 +16,7 @@ import RGD from '@/pages/RGD'
 import SaldoACM from '@/pages/SaldoACM'
 import DRE from '@/pages/DRE'
 import Despesas from '@/pages/Despesas'
+import Configuracoes from '@/pages/Configuracoes'
 
 export default function App() {
   return (
@@ -30,6 +31,7 @@ export default function App() {
               <ProtectedRoute modulo="dashboard"><Home /></ProtectedRoute>
             } />
            <Route path="/funcionarios" element={<Funcionarios />} />
+          <Route path="/configuracoes" element={<Configuracoes />} />
           <Route path="/usinas" element={
             <ProtectedRoute modulo="usinas"><Usinas /></ProtectedRoute>
           } />

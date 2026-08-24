@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import api from '@/lib/api'
 import { formatCurrency } from '@/lib/utils'
-import { BarChart3, ChevronLeft, ChevronRight } from 'lucide-react'
-
-const MESES_CURTO = ['', 'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+import { MESES_CURTO } from '@/lib/meses'
+import YearPicker from '@/components/YearPicker'
+import { BarChart3 } from 'lucide-react'
 
 export default function RGD() {
   const [dados, setDados] = useState([])
@@ -34,11 +34,7 @@ export default function RGD() {
         </div>
       </div>
 
-      <div className="flex items-center justify-center gap-4 mb-6">
-        <button onClick={() => setAno(ano - 1)} className="p-2 rounded-lg hover:bg-dark-200 transition"><ChevronLeft size={20} /></button>
-        <h2 className="text-lg font-semibold text-dark-900 w-24 text-center">{ano}</h2>
-        <button onClick={() => setAno(ano + 1)} className="p-2 rounded-lg hover:bg-dark-200 transition"><ChevronRight size={20} /></button>
-      </div>
+      <YearPicker ano={ano} onPrev={() => setAno(ano - 1)} onNext={() => setAno(ano + 1)} />
 
       {loading ? (
         <div className="text-center py-12 text-dark-400">Carregando...</div>

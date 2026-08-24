@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
-import { Database, ChevronLeft, ChevronRight } from 'lucide-react'
-
-const MESES_CURTO = ['', 'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+import { MESES_CURTO } from '@/lib/meses'
+import YearPicker from '@/components/YearPicker'
+import { Database } from 'lucide-react'
 
 export default function SaldoACM() {
   const [dados, setDados] = useState([])
@@ -40,11 +40,7 @@ export default function SaldoACM() {
         </div>
       </div>
 
-      <div className="flex items-center justify-center gap-4 mb-6">
-        <button onClick={() => setAno(ano - 1)} className="p-2 rounded-lg hover:bg-dark-200 transition"><ChevronLeft size={20} /></button>
-        <h2 className="text-lg font-semibold text-dark-900 w-24 text-center">{ano}</h2>
-        <button onClick={() => setAno(ano + 1)} className="p-2 rounded-lg hover:bg-dark-200 transition"><ChevronRight size={20} /></button>
-      </div>
+      <YearPicker ano={ano} onPrev={() => setAno(ano - 1)} onNext={() => setAno(ano + 1)} />
 
       <div className="flex items-center gap-3 mb-4">
         <select value={filtroUsina} onChange={(e) => setFiltroUsina(e.target.value)}

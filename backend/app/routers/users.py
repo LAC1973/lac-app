@@ -18,18 +18,23 @@ async def list_users(admin: dict = Depends(require_admin)):
 
     profiles = sb.table("profiles").select("*").order("full_name").execute()
 
-    users_with_perms = []
-    for profile in profiles.data or []:
+    profile_ids = [p["id"] for p in profiles.data or []]
+
+    permissoes_map = {}
+    if profile_ids:
         perms = (
             sb.table("permissoes")
             .select("*")
-            .eq("profile_id", profile["id"])
+            .in_("profile_id", profile_ids)
             .execute()
         )
-        users_with_perms.append({
-            **profile,
-            "permissoes": perms.data or [],
-        })
+        for perm in perms.data or []:
+            permissoes_map.setdefault(perm["profile_id"], []).append(perm)
+
+    users_with_perms = [
+        {**profile, "permissoes": permissoes_map.get(profile["id"], [])}
+        for profile in profiles.data or []
+    ]
 
     return users_with_perms
 

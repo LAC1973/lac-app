@@ -67,7 +67,7 @@ async def list_documentos(
     elif cliente_id:
         query = query.eq("cliente_id", cliente_id)
 
-    result = query.order("created_at", desc=True).execute()
+    result = query.order("created_at", desc=True).limit(2000).execute()
     return result.data or []
 
 

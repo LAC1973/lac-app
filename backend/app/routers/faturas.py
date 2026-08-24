@@ -17,7 +17,8 @@ async def list_faturas(
 ):
     """Lista faturas com filtros opcionais."""
     sb = get_supabase_admin()
-    query = sb.table("faturas").select("*, clientes(nome, celular, usina_id, valor_kwh, numero_uc, usinas(nome))")
+    # !inner necessario pra poder filtrar pela coluna usina_id da tabela embutida
+    query = sb.table("faturas").select("*, clientes!inner(nome, celular, usina_id, valor_kwh, numero_uc, usinas(nome))")
 
     if mes_referencia:
         query = query.eq("mes_referencia", mes_referencia)
@@ -25,16 +26,12 @@ async def list_faturas(
         query = query.eq("cliente_id", cliente_id)
     if status:
         query = query.eq("status", status)
-
-    result = query.order("created_at", desc=True).execute()
-
-    faturas = result.data or []
-
-    # Filtro por usina (precisa ser feito após o join)
     if usina_id:
-        faturas = [f for f in faturas if f.get("clientes", {}).get("usina_id") == usina_id]
+        query = query.eq("clientes.usina_id", usina_id)
 
-    return faturas
+    result = query.order("created_at", desc=True).limit(2000).execute()
+
+    return result.data or []
 
 
 @router.post("/gerar")
@@ -66,45 +63,69 @@ async def gerar_faturas_mes(
     mes_num = req.mes_referencia.month
     faturas_geradas = []
 
+    # Calcular primeiro/último dia do mês (igual para todos os clientes)
+    primeiro_dia = f"{ano}-{mes_num:02d}-01"
+    if mes_num == 12:
+        ultimo_dia = f"{ano + 1}-01-01"
+    else:
+        ultimo_dia = f"{ano}-{mes_num + 1:02d}-01"
+
+    # Produção total do mês, por usina (uma única passada, não por cliente)
+    usina_ids = list({c["usina_id"] for c in clientes.data})
+    inversores = (
+        sb.table("inversores").select("id, usina_id").in_("usina_id", usina_ids).execute()
+        if usina_ids else None
+    )
+    usina_para_inversores = {}
+    for inv in (inversores.data if inversores else []) or []:
+        usina_para_inversores.setdefault(inv["usina_id"], []).append(inv["id"])
+
+    todos_inversor_ids = [i for ids in usina_para_inversores.values() for i in ids]
+    producao_por_inversor = {}
+    if todos_inversor_ids:
+        producao = (
+            sb.table("producao_diaria")
+            .select("inversor_id, producao_kwh")
+            .in_("inversor_id", todos_inversor_ids)
+            .gte("data", primeiro_dia)
+            .lt("data", ultimo_dia)
+            .execute()
+        )
+        for r in producao.data or []:
+            producao_por_inversor[r["inversor_id"]] = (
+                producao_por_inversor.get(r["inversor_id"], 0) + r["producao_kwh"]
+            )
+
+    producao_por_usina = {
+        usina_id: sum(producao_por_inversor.get(i, 0) for i in inv_ids)
+        for usina_id, inv_ids in usina_para_inversores.items()
+    }
+
+    # Percentual vigente de cada cliente (uma única passada, não por cliente)
+    cliente_usina_map = {c["id"]: c["usina_id"] for c in clientes.data}
+    percs = (
+        sb.table("percentuais")
+        .select("cliente_id, usina_id, percentual")
+        .in_("cliente_id", list(cliente_usina_map.keys()))
+        .order("data_vigencia", desc=True)
+        .execute()
+    )
+    percentual_map = {}
+    for p in percs.data or []:
+        cid = p["cliente_id"]
+        if cid in percentual_map:
+            continue
+        if p["usina_id"] != cliente_usina_map.get(cid):
+            continue
+        percentual_map[cid] = p["percentual"]
+
     for cliente in clientes.data:
         if cliente["id"] in clientes_com_fatura:
             continue
 
         usina_id = cliente["usina_id"]
-
-        # Buscar produção total da usina no mês
-        primeiro_dia = f"{ano}-{mes_num:02d}-01"
-        if mes_num == 12:
-            ultimo_dia = f"{ano + 1}-01-01"
-        else:
-            ultimo_dia = f"{ano}-{mes_num + 1:02d}-01"
-
-        inversores = sb.table("inversores").select("id").eq("usina_id", usina_id).execute()
-        inversor_ids = [inv["id"] for inv in inversores.data or []]
-
-        producao_total = 0
-        if inversor_ids:
-            producao = (
-                sb.table("producao_diaria")
-                .select("producao_kwh")
-                .in_("inversor_id", inversor_ids)
-                .gte("data", primeiro_dia)
-                .lt("data", ultimo_dia)
-                .execute()
-            )
-            producao_total = sum(r["producao_kwh"] for r in producao.data or [])
-
-        # Buscar percentual vigente do cliente
-        perm = (
-            sb.table("percentuais")
-            .select("percentual")
-            .eq("cliente_id", cliente["id"])
-            .eq("usina_id", usina_id)
-            .order("data_vigencia", desc=True)
-            .limit(1)
-            .execute()
-        )
-        percentual = perm.data[0]["percentual"] if perm.data else 0
+        producao_total = producao_por_usina.get(usina_id, 0)
+        percentual = percentual_map.get(cliente["id"], 0)
 
         # Calcular valores
         kwh_injetado = producao_total * (percentual / 100)

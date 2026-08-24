@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import api from '@/lib/api'
 import { cn, formatCurrency, whatsappUrl } from '@/lib/utils'
+import { NOMES_MES } from '@/lib/meses'
+import MonthPicker from '@/components/MonthPicker'
 import {
   Plus, Receipt, Trash2, X, Download, MessageCircle,
-  ChevronLeft, ChevronRight,
 } from 'lucide-react'
 
 export default function Recibos() {
@@ -76,10 +77,8 @@ export default function Recibos() {
     // Monta mensagem
     const mesNum = parseInt(mesRef.split('-')[1])
     const ano = mesRef.split('-')[0]
-    const nomesMes = ['', 'Janeiro', 'Fevereiro', 'Marco', 'Abril', 'Maio', 'Junho',
-      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 
-    const mensagem = `Ola ${cliente.nome.split(' ')[0]}, segue o recibo de energia solar referente a ${nomesMes[mesNum]}/${ano}.\n\nValor: ${formatCurrency(recibo.valor_pago)}\n\nLAC Solar Ltda`
+    const mensagem = `Ola ${cliente.nome.split(' ')[0]}, segue o recibo de energia solar referente a ${NOMES_MES[mesNum]}/${ano}.\n\nValor: ${formatCurrency(recibo.valor_pago)}\n\nLAC Solar Ltda`
 
     const url = whatsappUrl(cliente.celular, mensagem)
     window.open(url, '_blank')
@@ -101,8 +100,6 @@ export default function Recibos() {
     setMesRef(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`)
   }
 
-  const nomesMes = ['', 'Janeiro', 'Fevereiro', 'Marco', 'Abril', 'Maio', 'Junho',
-    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
   const mesAtual = parseInt(mesRef.split('-')[1])
   const anoAtual = parseInt(mesRef.split('-')[0])
 
@@ -127,17 +124,7 @@ export default function Recibos() {
       </div>
 
       {/* Seletor de mes */}
-      <div className="flex items-center justify-center gap-4 mb-6">
-        <button onClick={() => changeMes(-1)} className="p-2 rounded-lg hover:bg-dark-200 transition">
-          <ChevronLeft size={20} />
-        </button>
-        <h2 className="text-lg font-semibold text-dark-900 w-48 text-center">
-          {nomesMes[mesAtual]} {anoAtual}
-        </h2>
-        <button onClick={() => changeMes(1)} className="p-2 rounded-lg hover:bg-dark-200 transition">
-          <ChevronRight size={20} />
-        </button>
-      </div>
+      <MonthPicker mes={mesAtual} ano={anoAtual} onPrev={() => changeMes(-1)} onNext={() => changeMes(1)} />
 
       {/* Resumo */}
       <div className="bg-white rounded-xl p-4 border border-dark-200 shadow-sm mb-4">
@@ -161,7 +148,7 @@ export default function Recibos() {
               </button>
             </div>
             <p className="text-sm text-dark-600 mb-4">
-              Gerar recibos para todos os clientes com faturas <strong>pagas</strong> em {nomesMes[mesAtual]} {anoAtual}?
+              Gerar recibos para todos os clientes com faturas <strong>pagas</strong> em {NOMES_MES[mesAtual]} {anoAtual}?
             </p>
             <p className="text-xs text-dark-400 mb-4">
               Apenas clientes com faturas marcadas como "Paga" terao recibos gerados.

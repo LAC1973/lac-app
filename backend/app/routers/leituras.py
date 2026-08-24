@@ -85,13 +85,29 @@ async def salvar_leituras(
 ):
     """Salva leituras em lote e recalcula consumo automaticamente."""
     sb = get_supabase_admin()
-    atualizados = 0
 
+    # Buscar de uma vez as faturas que precisam de leitura existente pra calcular consumo
+    faltando_ids = [
+        reg.fatura_id
+        for reg in req.registros
+        if reg.fatura_id and (reg.leitura_inicial is None or reg.leitura_final is None)
+    ]
+    existentes_map = {}
+    if faltando_ids:
+        existentes = (
+            sb.table("faturas")
+            .select("id, leitura_inicial, leitura_final")
+            .in_("id", faltando_ids)
+            .execute()
+        )
+        existentes_map = {f["id"]: f for f in existentes.data or []}
+
+    payloads = []
     for reg in req.registros:
         if not reg.fatura_id:
             continue
 
-        update = {}
+        update = {"id": reg.fatura_id}
         if reg.leitura_inicial is not None:
             update["leitura_inicial"] = reg.leitura_inicial
         if reg.leitura_final is not None:
@@ -102,19 +118,20 @@ async def salvar_leituras(
         fin = reg.leitura_final
 
         if ini is None or fin is None:
-            # Buscar valores existentes
-            fatura = sb.table("faturas").select("leitura_inicial, leitura_final").eq("id", reg.fatura_id).single().execute()
-            if fatura.data:
+            existente = existentes_map.get(reg.fatura_id)
+            if existente:
                 if ini is None:
-                    ini = fatura.data.get("leitura_inicial")
+                    ini = existente.get("leitura_inicial")
                 if fin is None:
-                    fin = fatura.data.get("leitura_final")
+                    fin = existente.get("leitura_final")
 
         if ini is not None and fin is not None:
             update["consumo_kwh"] = round(fin - ini, 2)
 
-        if update:
-            sb.table("faturas").update(update).eq("id", reg.fatura_id).execute()
-            atualizados += 1
+        if len(update) > 1:
+            payloads.append(update)
 
-    return {"message": f"{atualizados} leitura(s) atualizada(s)"}
+    if payloads:
+        sb.table("faturas").upsert(payloads, on_conflict="id").execute()
+
+    return {"message": f"{len(payloads)} leitura(s) atualizada(s)"}

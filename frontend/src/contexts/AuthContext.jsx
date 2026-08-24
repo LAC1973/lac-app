@@ -19,19 +19,21 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      if (session?.user) await loadProfile()
-      setLoading(false)
-    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'TOKEN_REFRESHED') {
+        // sessao renovada silenciosamente (~1h): so atualiza o token, nao recarrega o perfil
+        setUser(session?.user ?? null)
+        return
+      }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      setLoading(true)
       setUser(session?.user ?? null)
       if (session?.user) {
         await loadProfile()
       } else {
         setProfile(null)
       }
+      setLoading(false)
     })
 
     return () => subscription.unsubscribe()

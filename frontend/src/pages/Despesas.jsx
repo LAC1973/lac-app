@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import api from '@/lib/api'
 import { formatCurrency } from '@/lib/utils'
-import { Plus, Trash2, X, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react'
+import MonthPicker from '@/components/MonthPicker'
+import { Plus, Trash2, X, TrendingUp } from 'lucide-react'
 
 export default function Despesas() {
   const { hasPermission } = useAuth()
@@ -96,8 +97,6 @@ export default function Despesas() {
     setMesRef(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-01')
   }
 
-  const nomesMes = ['', 'Janeiro', 'Fevereiro', 'Marco', 'Abril', 'Maio', 'Junho',
-    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
   const mesAtual = parseInt(mesRef.split('-')[1])
   const anoAtual = parseInt(mesRef.split('-')[0])
 
@@ -113,11 +112,7 @@ export default function Despesas() {
         </div>
       </div>
 
-      <div className="flex items-center justify-center gap-4 mb-6">
-        <button onClick={() => changeMes(-1)} className="p-2 rounded-lg hover:bg-dark-200 transition"><ChevronLeft size={20} /></button>
-        <h2 className="text-lg font-semibold text-dark-900 w-48 text-center">{nomesMes[mesAtual]} {anoAtual}</h2>
-        <button onClick={() => changeMes(1)} className="p-2 rounded-lg hover:bg-dark-200 transition"><ChevronRight size={20} /></button>
-      </div>
+      <MonthPicker mes={mesAtual} ano={anoAtual} onPrev={() => changeMes(-1)} onNext={() => changeMes(1)} />
 
       <div className="grid grid-cols-2 gap-4 mb-6">
         <div className="bg-white rounded-xl p-4 border border-dark-200 shadow-sm">

@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import {
     LayoutDashboard, Sun, Users, PieChart, BarChart3, FileText,
   Receipt, TrendingUp, Database, DollarSign, Zap,
-  Settings, LogOut, ChevronLeft, ChevronRight,
+  Settings, SlidersHorizontal, LogOut, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -90,6 +90,22 @@ export default function Sidebar() {
                 >
                   <Settings size={20} className="shrink-0" />
                   {!collapsed && <span>Funcionários</span>}
+                </NavLink>
+              </li>
+              <li>
+                <NavLink
+                  to="/configuracoes"
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors',
+                      isActive
+                        ? 'bg-solar-500/15 text-solar-400 font-medium'
+                        : 'text-dark-400 hover:text-white hover:bg-dark-800'
+                    )
+                  }
+                >
+                  <SlidersHorizontal size={20} className="shrink-0" />
+                  {!collapsed && <span>Configurações</span>}
                 </NavLink>
               </li>
             </ul>
