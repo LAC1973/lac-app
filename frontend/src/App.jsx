@@ -30,52 +30,38 @@ export default function App() {
             <Route path="/" element={
               <ProtectedRoute modulo="dashboard"><Home /></ProtectedRoute>
             } />
-           <Route path="/funcionarios" element={<Funcionarios />} />
-          <Route path="/configuracoes" element={<Configuracoes />} />
-          <Route path="/usinas" element={
-            <ProtectedRoute modulo="usinas"><Usinas /></ProtectedRoute>
-          } />
-          <Route path="/clientes" element={
-            <ProtectedRoute modulo="clientes"><Clientes /></ProtectedRoute>
-          } />
-          <Route path="/producao" element={
-            <ProtectedRoute modulo="producao"><Producao /></ProtectedRoute>
-          } />
-          <Route path="/faturas" element={
-            <ProtectedRoute modulo="faturas"><Faturas /></ProtectedRoute>
-          } />
-          <Route path="/recibos" element={
-            <ProtectedRoute modulo="recibos"><Recibos /></ProtectedRoute>
-          } />
-          <Route path="/percentuais" element={
-            <ProtectedRoute modulo="percentuais"><Percentuais /></ProtectedRoute>
-          } />
-          <Route path="/rgd" element={
-            <ProtectedRoute modulo="rgd"><RGD /></ProtectedRoute>
-          } />
-          <Route path="/saldo-acm" element={
-            <ProtectedRoute modulo="saldo_acm"><SaldoACM /></ProtectedRoute>
-          } />
-          <Route path="/dre" element={
-            <ProtectedRoute modulo="dre"><DRE /></ProtectedRoute>
-          } />
-          <Route path="/despesas" element={
-            <ProtectedRoute modulo="despesas"><Despesas /></ProtectedRoute>
-          } />
-
-            {[
-              { path: '/usinas', modulo: 'usinas', title: 'Usinas' },
-              { path: '/usinas', modulo: 'usinas', title: 'Usinas' },
-            ].map((r) => (
-              <Route key={r.path} path={r.path} element={
-                <ProtectedRoute modulo={r.modulo}>
-                  <div className="bg-white rounded-xl border border-dark-200 p-12 text-center shadow-sm">
-                    <h1 className="text-xl font-bold text-dark-700 mb-2">{r.title}</h1>
-                    <p className="text-dark-400">Em breve</p>
-                  </div>
-                </ProtectedRoute>
-              } />
-            ))}
+            <Route path="/funcionarios" element={<Funcionarios />} />
+            <Route path="/configuracoes" element={<Configuracoes />} />
+            <Route path="/usinas" element={
+              <ProtectedRoute modulo="usinas"><Usinas /></ProtectedRoute>
+            } />
+            <Route path="/clientes" element={
+              <ProtectedRoute modulo="clientes"><Clientes /></ProtectedRoute>
+            } />
+            <Route path="/producao" element={
+              <ProtectedRoute modulo="producao"><Producao /></ProtectedRoute>
+            } />
+            <Route path="/faturas" element={
+              <ProtectedRoute modulo="faturas"><Faturas /></ProtectedRoute>
+            } />
+            <Route path="/recibos" element={
+              <ProtectedRoute modulo="recibos"><Recibos /></ProtectedRoute>
+            } />
+            <Route path="/percentuais" element={
+              <ProtectedRoute modulo="percentuais"><Percentuais /></ProtectedRoute>
+            } />
+            <Route path="/rgd" element={
+              <ProtectedRoute modulo="rgd"><RGD /></ProtectedRoute>
+            } />
+            <Route path="/saldo-acm" element={
+              <ProtectedRoute modulo="saldo_acm"><SaldoACM /></ProtectedRoute>
+            } />
+            <Route path="/dre" element={
+              <ProtectedRoute modulo="dre"><DRE /></ProtectedRoute>
+            } />
+            <Route path="/despesas" element={
+              <ProtectedRoute modulo="despesas"><Despesas /></ProtectedRoute>
+            } />
           </Route>
         </Routes>
       </AuthProvider>
