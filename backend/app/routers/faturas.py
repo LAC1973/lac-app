@@ -18,7 +18,7 @@ async def list_faturas(
     """Lista faturas com filtros opcionais."""
     sb = get_supabase_admin()
     # !inner necessario pra poder filtrar pela coluna usina_id da tabela embutida
-    query = sb.table("faturas").select("*, clientes!inner(nome, celular, usina_id, valor_kwh, numero_uc, usinas(nome))")
+    query = sb.table("faturas").select("*, clientes(nome, celular, valor_kwh, usinas(nome)), clientes_ucs(nome_uc, numero_uc, usina_id, usinas(nome))")
 
     if mes_referencia:
         query = query.eq("mes_referencia", mes_referencia)
@@ -170,6 +170,8 @@ async def create_fatura(
     """Cria uma fatura individual manualmente."""
     sb = get_supabase_admin()
     data = req.model_dump(exclude_none=True)
+    if "cliente_uc_id" in data:
+        data["cliente_uc_id"] = data["cliente_uc_id"]
     for campo in ["mes_referencia", "data_vencimento"]:
         if campo in data:
             data[campo] = str(data[campo])

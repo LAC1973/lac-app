@@ -4,7 +4,7 @@ from datetime import date
 
 
 class ClienteCreate(BaseModel):
-    usina_id: int
+    usina_id: Optional[int] = None
     item: Optional[int] = None
     nome: str
     nome_uc: Optional[str] = None

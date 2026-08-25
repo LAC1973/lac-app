@@ -222,10 +222,14 @@ export default function Faturas() {
               {faturas.map((fatura) => {
                 const st = STATUS_CONFIG[fatura.status] || STATUS_CONFIG.pendente
                 const clienteNome = fatura.clientes?.nome || '-'
-                const usinaNome = fatura.clientes?.usinas?.nome || '-'
+                const ucNome = fatura.clientes_ucs?.nome_uc || ''
+                const usinaNome = fatura.clientes_ucs?.usinas?.nome || fatura.clientes?.usinas?.nome || '-'
                 return (
                   <tr key={fatura.id} className="border-b border-dark-100 hover:bg-dark-50">
-                    <td className="py-3 px-4 font-medium text-dark-900">{clienteNome}</td>
+                    <td className="py-3 px-4">
+                      <p className="font-medium text-dark-900">{clienteNome}</p>
+                      {ucNome && <p className="text-xs text-dark-500">{ucNome}</p>}
+                    </td>
                     <td className="py-3 px-4 text-dark-600">{usinaNome}</td>
                     <td className="py-3 px-4 text-right text-dark-700">{fatura.kwh_injetado?.toFixed(1) || '-'}</td>
                     <td className="py-3 px-4 text-right text-dark-700">{formatCurrency(fatura.valor_kwh_aplicado)}</td>
@@ -501,7 +505,7 @@ function LeiturasModal({ usinaId, mesRef, onClose, onSaved }) {
 
 function NovaFaturaModal({ clientes, mesRef, onClose, onSaved }) {
   const [saving, setSaving] = useState(false)
-    const [uploading, setUploading] = useState(false)
+  const [uploading, setUploading] = useState(false)
 
   async function handleUploadEnergisa(e) {
     const file = e.target.files[0]
@@ -529,6 +533,7 @@ function NovaFaturaModal({ clientes, mesRef, onClose, onSaved }) {
   }
   const [form, setForm] = useState({
     cliente_id: '',
+    cliente_uc_id: '',
     mes_referencia: mesRef,
     leitura_inicial: '',
     leitura_final: '',
@@ -537,7 +542,17 @@ function NovaFaturaModal({ clientes, mesRef, onClose, onSaved }) {
     desconto_sazonal: 0,
   })
 
+  const [ucsCliente, setUcsCliente] = useState([])
+
   const clienteSelecionado = clientes.find((c) => c.id === parseInt(form.cliente_id))
+
+  useEffect(() => {
+    if (form.cliente_id) {
+      api.get('/clientes/' + form.cliente_id + '/ucs').then(({ data }) => setUcsCliente(data)).catch(() => setUcsCliente([]))
+    } else {
+      setUcsCliente([])
+    }
+  }, [form.cliente_id])
   const valorKwh = clienteSelecionado?.valor_kwh || 0.75
 
   const consumo = (form.leitura_inicial && form.leitura_final)
@@ -566,6 +581,7 @@ function NovaFaturaModal({ clientes, mesRef, onClose, onSaved }) {
 
     const payload = {
       cliente_id: parseInt(form.cliente_id),
+      cliente_uc_id: form.cliente_uc_id ? parseInt(form.cliente_uc_id) : null,
       mes_referencia: form.mes_referencia,
       leitura_inicial: form.leitura_inicial ? parseFloat(form.leitura_inicial) : null,
       leitura_final: form.leitura_final ? parseFloat(form.leitura_final) : null,
@@ -608,13 +624,27 @@ function NovaFaturaModal({ clientes, mesRef, onClose, onSaved }) {
               ))}
             </select>
           </div>
+          {ucsCliente.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-dark-600 mb-1">UC *</label>
+              <select value={form.cliente_uc_id} onChange={(e) => handleChange('cliente_uc_id', e.target.value)}
+                className="w-full px-4 py-2.5 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" required>
+                <option value="">Selecione a UC</option>
+                {ucsCliente.map((uc) => (
+                  <option key={uc.id} value={uc.id}>
+                    {uc.nome_uc || 'UC'} - {uc.usinas?.nome || ''} ({uc.numero_uc || ''})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-dark-600 mb-1">Mes Referencia *</label>
             <input type="month" value={form.mes_referencia.substring(0, 7)}
               onChange={(e) => handleChange('mes_referencia', e.target.value + '-01')}
               className="w-full px-4 py-2.5 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" required />
           </div>
-                    <div className="border-t border-dark-200 pt-4">
+          <div className="border-t border-dark-200 pt-4">
             <label className="flex items-center gap-2 px-4 py-3 rounded-lg bg-lac-100 hover:bg-lac-200 text-lac-800 text-sm font-medium cursor-pointer transition w-full justify-center">
               <Upload size={18} />
               {uploading ? 'Extraindo dados...' : 'Importar PDF da Energisa'}

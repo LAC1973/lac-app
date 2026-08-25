@@ -5,6 +5,7 @@ from datetime import date
 
 class FaturaCreate(BaseModel):
     cliente_id: int
+    cliente_uc_id: Optional[int] = None
     mes_referencia: date
     leitura_inicial: Optional[float] = None
     leitura_final: Optional[float] = None
