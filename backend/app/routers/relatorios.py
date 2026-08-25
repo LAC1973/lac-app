@@ -11,7 +11,7 @@ async def get_rgd(
     usina_id: int = Query(None),
     user: dict = Depends(require_permission("rgd", "visualizar")),
 ):
-    """RGD - Relatorio Gerencial de Desempenho. Consolida por usina, mês a mês."""
+    """RGD - por usina, lista cada UC com kWh injetado e valor, mes a mes."""
     sb = get_supabase_admin()
 
     query = sb.table("usinas").select("id, nome")
@@ -21,71 +21,70 @@ async def get_rgd(
 
     resultado = []
     for usina in usinas.data or []:
-        clientes = (
-            sb.table("clientes")
-            .select("id, nome, nome_uc, numero_uc")
+        ucs = (
+            sb.table("clientes_ucs")
+            .select("id, nome_uc, numero_uc, item, cliente_id, clientes(nome, valor_kwh, eh_agregado)")
             .eq("usina_id", usina["id"])
             .eq("activo", True)
-            .eq("eh_agregado", False)
-            .order("nome")
+            .order("item")
             .execute()
         )
 
-        cliente_ids = [c["id"] for c in clientes.data or []]
-        if not cliente_ids:
-            continue
-
-        faturas = (
-            sb.table("faturas")
-            .select("cliente_id, mes_referencia, kwh_injetado, valor_final, status")
-            .in_("cliente_id", cliente_ids)
-            .gte("mes_referencia", str(ano) + "-01-01")
-            .lte("mes_referencia", str(ano) + "-12-01")
-            .execute()
-        )
-
-        fatura_map = {}
-        for f in faturas.data or []:
-            mes = int(f["mes_referencia"].split("-")[1])
-            key = (f["cliente_id"], mes)
-            fatura_map[key] = f
-
-        clientes_dados = []
+        ucs_dados = []
         totais_mes = {m: {"kwh": 0, "valor": 0} for m in range(1, 13)}
 
-        for c in clientes.data or []:
+        for uc in ucs.data or []:
+            cliente = uc.get("clientes") or {}
+            if cliente.get("eh_agregado"):
+                continue
+
+            faturas = (
+                sb.table("faturas")
+                .select("mes_referencia, kwh_injetado, valor_final")
+                .eq("cliente_uc_id", uc["id"])
+                .gte("mes_referencia", str(ano) + "-01-01")
+                .lte("mes_referencia", str(ano) + "-12-01")
+                .execute()
+            )
+
             meses = {}
             total_kwh = 0
             total_valor = 0
             for m in range(1, 13):
-                f = fatura_map.get((c["id"], m))
-                kwh = f["kwh_injetado"] if f and f.get("kwh_injetado") else 0
-                valor = f["valor_final"] if f and f.get("valor_final") else 0
-                meses[m] = {"kwh": kwh, "valor": valor}
+                meses[m] = {"kwh": 0, "valor": 0}
+
+            for f in faturas.data or []:
+                mes = int(f["mes_referencia"].split("-")[1])
+                kwh = f.get("kwh_injetado") or 0
+                valor = f.get("valor_final") or 0
+                meses[mes] = {"kwh": kwh, "valor": valor}
                 total_kwh += kwh
                 total_valor += valor
-                totais_mes[m]["kwh"] += kwh
-                totais_mes[m]["valor"] += valor
+                totais_mes[mes]["kwh"] += kwh
+                totais_mes[mes]["valor"] += valor
 
-            clientes_dados.append({
-                "cliente_id": c["id"],
-                "nome": c["nome"],
-                "nome_uc": c["nome_uc"],
-                "numero_uc": c["numero_uc"],
+            ucs_dados.append({
+                "uc_id": uc["id"],
+                "cliente_id": uc["cliente_id"],
+                "nome": cliente.get("nome", ""),
+                "nome_uc": uc.get("nome_uc", ""),
+                "numero_uc": uc.get("numero_uc", ""),
+                "item": uc.get("item"),
+                "valor_kwh": cliente.get("valor_kwh", 0),
                 "meses": meses,
                 "total_kwh": total_kwh,
                 "total_valor": total_valor,
             })
 
-        resultado.append({
-            "usina_id": usina["id"],
-            "usina_nome": usina["nome"],
-            "clientes": clientes_dados,
-            "totais_mes": totais_mes,
-        })
+        if ucs_dados:
+            resultado.append({
+                "usina_id": usina["id"],
+                "usina_nome": usina["nome"],
+                "clientes": ucs_dados,
+                "totais_mes": totais_mes,
+            })
 
     return resultado
-
 
 @router.get("/saldo-acm")
 async def get_saldo_acumulado(
@@ -93,20 +92,20 @@ async def get_saldo_acumulado(
     usina_id: int = Query(None),
     user: dict = Depends(require_permission("saldo_acm", "visualizar")),
 ):
-    """Saldo Acumulado - historico de creditos de cada UC mês a mês."""
+    """Saldo Acumulado - historico de creditos por UC, mes a mes."""
     sb = get_supabase_admin()
 
-    query = sb.table("clientes").select("id, nome, nome_uc, numero_uc, usina_id, usinas(nome)")
+    query = sb.table("clientes_ucs").select("id, nome_uc, numero_uc, item, usina_id, cliente_id, clientes(nome), usinas(nome)")
     if usina_id:
         query = query.eq("usina_id", usina_id)
-    clientes = query.eq("activo", True).order("nome").execute()
+    ucs = query.eq("activo", True).order("item").execute()
 
     resultado = []
-    for c in clientes.data or []:
+    for uc in ucs.data or []:
         faturas = (
             sb.table("faturas")
             .select("mes_referencia, saldo_kwh")
-            .eq("cliente_id", c["id"])
+            .eq("cliente_uc_id", uc["id"])
             .gte("mes_referencia", str(ano) + "-01-01")
             .lte("mes_referencia", str(ano) + "-12-01")
             .order("mes_referencia")
@@ -122,16 +121,17 @@ async def get_saldo_acumulado(
             meses[mes] = f["saldo_kwh"]
 
         resultado.append({
-            "cliente_id": c["id"],
-            "nome": c["nome"],
-            "nome_uc": c["nome_uc"],
-            "numero_uc": c["numero_uc"],
-            "usina_nome": c.get("usinas", {}).get("nome", ""),
+            "uc_id": uc["id"],
+            "cliente_id": uc["cliente_id"],
+            "nome": uc.get("clientes", {}).get("nome", ""),
+            "nome_uc": uc.get("nome_uc", ""),
+            "numero_uc": uc.get("numero_uc", ""),
+            "item": uc.get("item"),
+            "usina_nome": uc.get("usinas", {}).get("nome", ""),
             "meses": meses,
         })
 
     return resultado
-
 
 @router.get("/dre")
 async def get_dre(
