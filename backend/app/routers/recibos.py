@@ -270,11 +270,19 @@ async def exportar_recibo_pdf(
     itens = sb.table("recibo_itens").select("fatura_id").eq("recibo_id", recibo_id).execute()
     fatura_ids = [i["fatura_id"] for i in itens.data or []]
 
-    faturas_query = sb.table("faturas").select("*, clientes(nome_uc, numero_uc, poste, item)")
+    faturas_query = sb.table("faturas").select("*, clientes(nome, nome_uc, numero_uc, poste, item), clientes_ucs(nome_uc, numero_uc, poste, item, usinas(nome))")
     if fatura_ids:
         faturas_query = faturas_query.in_("id", fatura_ids)
     else:
         faturas_query = faturas_query.eq("cliente_id", r["cliente_id"]).eq("mes_referencia", r["mes_referencia"])
+    faturas = faturas_query.execute()
+
+    # Enriquecer com dados da UC
+    for f in faturas.data or []:
+        if f.get("cliente_uc_id"):
+            uc_data = sb.table("clientes_ucs").select("nome_uc, numero_uc, poste, usinas(nome)").eq("id", f["cliente_uc_id"]).single().execute()
+            if uc_data.data:
+                f["uc_info"] = uc_data.data
     faturas = faturas_query.execute()
 
     linhas = sorted(
@@ -295,10 +303,10 @@ async def exportar_recibo_pdf(
     dia_venc = c.get("dia_vencimento") or 5
 
     f1 = linhas[0] if linhas else {}
-    cli1 = f1.get("clientes") or {}
+    cli1 = f1.get("clientes_ucs") or f1.get("clientes") or {}
     total_injetado = sum(f.get("kwh_injetado") or 0 for f in linhas)
 
-    nome_uc_tabela = cli1.get("nome_uc") or c.get("nome_uc") or c.get("nome", "")
+    nome_uc_tabela = cli1.get("nome_uc") or c.get("nome", "")
     if cli1.get("poste"):
         nome_uc_tabela = nome_uc_tabela + " (poste " + str(cli1["poste"]) + ")"
 
@@ -330,7 +338,7 @@ async def exportar_recibo_pdf(
         "CPF: 110.190.771-15 End.: Av. das Torres, 456 Poste 3 Cuiab\u00e1/MT - CEP: 78000-000": "CPF: " + str(c.get("cpf_cnpj", "")) + " End.: " + str(c.get("endereco", "")),
         "R$ 0,70": valor_kwh_fmt,
         ">254<": ">" + str(int(total_injetado)) + "<",
-        "6/4754860-7": str(cli1.get("numero_uc") or c.get("numero_uc") or ""),
+        "6/4754860-7": str(cli1.get("numero_uc") or ""),
         ">868<": ">" + (("{:.0f}".format(f1["leitura_inicial"])) if f1.get("leitura_inicial") else "") + "<",
         "1.122": ("{:.0f}".format(f1["leitura_final"])) if f1.get("leitura_final") else "",
         "2.807": ("{:.0f}".format(f1["saldo_kwh"])) if f1.get("saldo_kwh") else "0",
