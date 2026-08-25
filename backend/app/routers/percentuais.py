@@ -11,44 +11,42 @@ async def list_percentuais_usina(
     usina_id: int,
     user: dict = Depends(require_permission("percentuais", "visualizar")),
 ):
-    """Lista os percentuais vigentes de todos os clientes de uma usina."""
+    """Lista os percentuais vigentes de todas as UCs de uma usina."""
     sb = get_supabase_admin()
 
-    clientes = (
-        sb.table("clientes")
-        .select("id, nome, nome_uc, numero_uc, activo")
+    ucs = (
+        sb.table("clientes_ucs")
+        .select("*, clientes(nome, cpf_cnpj)")
         .eq("usina_id", usina_id)
         .eq("activo", True)
-        .order("nome")
+        .order("item")
         .execute()
     )
-
-    cliente_ids = [c["id"] for c in clientes.data or []]
-
-    percentual_map = {}
-    if cliente_ids:
-        percs = (
-            sb.table("percentuais")
-            .select("*")
-            .in_("cliente_id", cliente_ids)
-            .eq("usina_id", usina_id)
-            .order("data_vigencia", desc=True)
-            .execute()
-        )
-        for p in percs.data or []:
-            # ordenado por data_vigencia desc: o primeiro visto por cliente é o vigente
-            percentual_map.setdefault(p["cliente_id"], p)
 
     resultado = []
     soma = 0
 
-    for cliente in clientes.data or []:
-        percentual_vigente = percentual_map.get(cliente["id"])
+    for uc in ucs.data or []:
+        perm = (
+            sb.table("percentuais")
+            .select("*")
+            .eq("cliente_uc_id", uc["id"])
+            .eq("usina_id", usina_id)
+            .order("data_vigencia", desc=True)
+            .limit(1)
+            .execute()
+        )
+        percentual_vigente = perm.data[0] if perm.data else None
         valor = percentual_vigente["percentual"] if percentual_vigente else 0
         soma += valor
 
         resultado.append({
-            **cliente,
+            "uc_id": uc["id"],
+            "cliente_id": uc["cliente_id"],
+            "nome_cliente": uc.get("clientes", {}).get("nome", ""),
+            "nome_uc": uc.get("nome_uc", ""),
+            "numero_uc": uc.get("numero_uc", ""),
+            "item": uc.get("item"),
             "percentual_vigente": percentual_vigente,
         })
 
@@ -57,7 +55,6 @@ async def list_percentuais_usina(
         "soma_percentuais": soma,
         "completo": abs(soma - 100) < 0.01,
     }
-
 
 @router.get("/cliente/{cliente_id}")
 async def list_percentuais_cliente(
@@ -81,46 +78,46 @@ async def create_percentual(
     req: PercentualCreate,
     user: dict = Depends(require_permission("percentuais", "criar")),
 ):
-    """Define um novo percentual para um cliente. Não exclui os antigos (histórico)."""
+    """Define um novo percentual para uma UC. Nao exclui os antigos (historico)."""
     sb = get_supabase_admin()
 
     # Verificar se a soma vai ultrapassar 100%
-    clientes = (
-        sb.table("clientes")
+    ucs = (
+        sb.table("clientes_ucs")
         .select("id")
         .eq("usina_id", req.usina_id)
         .eq("activo", True)
         .execute()
     )
 
-    outros_ids = [c["id"] for c in clientes.data or [] if c["id"] != req.cliente_id]
-
     soma = 0
-    if outros_ids:
-        percs = (
+    for uc in ucs.data or []:
+        uc_id = req.cliente_uc_id if hasattr(req, 'cliente_uc_id') else req.cliente_id
+        if uc["id"] == uc_id:
+            continue
+        perm = (
             sb.table("percentuais")
-            .select("cliente_id, percentual")
-            .in_("cliente_id", outros_ids)
+            .select("percentual")
+            .eq("cliente_uc_id", uc["id"])
             .eq("usina_id", req.usina_id)
             .order("data_vigencia", desc=True)
+            .limit(1)
             .execute()
         )
-        vistos = set()
-        for p in percs.data or []:
-            # ordenado por data_vigencia desc: o primeiro visto por cliente é o vigente
-            if p["cliente_id"] in vistos:
-                continue
-            vistos.add(p["cliente_id"])
-            soma += p["percentual"]
+        if perm.data:
+            soma += perm.data[0]["percentual"]
 
     if soma + req.percentual > 100.01:
         raise HTTPException(
             status_code=400,
-            detail=f"A soma dos percentuais ficaria em {soma + req.percentual:.2f}%, ultrapassando 100%",
+            detail="A soma dos percentuais ficaria em {:.2f}%, ultrapassando 100%".format(soma + req.percentual),
         )
 
     data = req.model_dump()
     data["data_vigencia"] = str(data["data_vigencia"])
+    # Suporta tanto cliente_uc_id quanto cliente_id
+    if "cliente_uc_id" not in data or not data["cliente_uc_id"]:
+        data["cliente_uc_id"] = data.get("cliente_id")
     result = sb.table("percentuais").insert(data).execute()
     return result.data[0]
 

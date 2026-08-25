@@ -46,7 +46,27 @@ class ClienteUpdate(BaseModel):
 
 
 class PercentualCreate(BaseModel):
-    cliente_id: int
+    cliente_uc_id: Optional[int] = None
+    cliente_id: Optional[int] = None
     usina_id: int
     percentual: float
     data_vigencia: date
+
+class ClienteUCCreate(BaseModel):
+    cliente_id: int
+    usina_id: int
+    nome_uc: Optional[str] = None
+    numero_uc: Optional[str] = None
+    numero_uc_novo: Optional[str] = None
+    poste: Optional[str] = None
+    item: Optional[int] = None
+    dia_leitura: Optional[int] = None
+
+
+class ClienteUCUpdate(BaseModel):
+    nome_uc: Optional[str] = None
+    numero_uc: Optional[str] = None
+    numero_uc_novo: Optional[str] = None
+    poste: Optional[str] = None
+    item: Optional[int] = None
+    dia_leitura: Optional[int] = None

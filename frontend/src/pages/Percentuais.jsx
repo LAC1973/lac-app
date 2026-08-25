@@ -14,16 +14,16 @@ export default function Percentuais() {
   const [form, setForm] = useState({ percentual: '', data_vigencia: '' })
   const [saving, setSaving] = useState(false)
 
-  const canEdit = hasPermission('percentuais', 'criar')
+  var canEdit = hasPermission('percentuais', 'criar')
 
-  useEffect(() => { loadUsinas() }, [])
-  useEffect(() => { if (usinaId) loadPercentuais() }, [usinaId])
+  useEffect(function () { loadUsinas() }, [])
+  useEffect(function () { if (usinaId) loadPercentuais() }, [usinaId])
 
   async function loadUsinas() {
     try {
-      const { data } = await api.get('/usinas/')
-      setUsinas(data)
-      if (data.length > 0) setUsinaId(String(data[0].id))
+      var res = await api.get('/usinas/')
+      setUsinas(res.data)
+      if (res.data.length > 0) setUsinaId(String(res.data[0].id))
     } catch (err) {
       console.error('Erro:', err)
     }
@@ -32,8 +32,8 @@ export default function Percentuais() {
   async function loadPercentuais() {
     setLoading(true)
     try {
-      const { data } = await api.get('/percentuais/usina/' + usinaId)
-      setDados(data)
+      var res = await api.get('/percentuais/usina/' + usinaId)
+      setDados(res.data)
     } catch (err) {
       console.error('Erro:', err)
     } finally {
@@ -41,7 +41,7 @@ export default function Percentuais() {
     }
   }
 
-  async function handleAdd(clienteId) {
+  async function handleAdd(ucId) {
     if (!form.percentual || !form.data_vigencia) {
       alert('Preencha percentual e data de vigencia')
       return
@@ -49,7 +49,7 @@ export default function Percentuais() {
     setSaving(true)
     try {
       await api.post('/percentuais/', {
-        cliente_id: clienteId,
+        cliente_uc_id: ucId,
         usina_id: parseInt(usinaId),
         percentual: parseFloat(form.percentual),
         data_vigencia: form.data_vigencia,
@@ -64,28 +64,25 @@ export default function Percentuais() {
     }
   }
 
-  const soma = dados?.soma_percentuais || 0
-  const completo = dados?.completo || false
+  var soma = dados?.soma_percentuais || 0
+  var completo = dados?.completo || false
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Percentuais</h1>
-          <p className="text-dark-500 text-sm mt-1">Distribuicao de energia por cliente em cada usina</p>
+          <p className="text-dark-500 text-sm mt-1">Distribuicao de energia por UC em cada usina</p>
         </div>
       </div>
 
       <div className="flex items-center gap-4 mb-6">
-        <select
-          value={usinaId}
-          onChange={(e) => setUsinaId(e.target.value)}
-          className="px-4 py-2.5 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50"
-        >
+        <select value={usinaId} onChange={function (e) { setUsinaId(e.target.value) }}
+          className="px-4 py-2.5 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50">
           <option value="">Selecione a usina</option>
-          {usinas.map((u) => (
-            <option key={u.id} value={u.id}>{u.nome}</option>
-          ))}
+          {usinas.map(function (u) {
+            return (<option key={u.id} value={u.id}>{u.nome}</option>)
+          })}
         </select>
 
         {dados && (
@@ -110,28 +107,33 @@ export default function Percentuais() {
       ) : !dados || dados.clientes.length === 0 ? (
         <div className="bg-white rounded-xl border border-dark-200 p-12 text-center shadow-sm">
           <PieChart size={48} className="mx-auto mb-4 text-dark-300" />
-          <p className="text-dark-500">Nenhum cliente ativo nesta usina</p>
+          <p className="text-dark-500">Nenhuma UC cadastrada nesta usina</p>
+          <p className="text-sm text-dark-400 mt-1">Cadastre UCs nos clientes primeiro</p>
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-dark-200 shadow-sm overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-dark-200 bg-dark-50">
-                <th className="text-left py-3 px-4 font-medium text-dark-600">Cliente</th>
-                <th className="text-left py-3 px-4 font-medium text-dark-600">UC</th>
-                <th className="text-center py-3 px-4 font-medium text-dark-600">Percentual Vigente</th>
-                <th className="text-center py-3 px-4 font-medium text-dark-600">Data Vigencia</th>
+                <th className="text-center py-3 px-3 font-medium text-dark-600 w-12">Item</th>
+                <th className="text-left py-3 px-4 font-medium text-dark-600">Titular</th>
+                <th className="text-left py-3 px-4 font-medium text-dark-600">Nome UC</th>
+                <th className="text-left py-3 px-4 font-medium text-dark-600">Numero UC</th>
+                <th className="text-center py-3 px-4 font-medium text-dark-600">Percentual</th>
+                <th className="text-center py-3 px-4 font-medium text-dark-600">Vigencia</th>
                 {canEdit && <th className="text-center py-3 px-4 font-medium text-dark-600">Acao</th>}
               </tr>
             </thead>
             <tbody>
-              {dados.clientes.map((c) => {
-                const pv = c.percentual_vigente
-                const isAdding = showAdd === c.id
+              {dados.clientes.map(function (c) {
+                var pv = c.percentual_vigente
+                var isAdding = showAdd === c.uc_id
                 return (
-                  <tr key={c.id} className="border-b border-dark-100 hover:bg-dark-50">
-                    <td className="py-3 px-4 font-medium text-dark-900">{c.nome}</td>
-                    <td className="py-3 px-4 text-dark-600">{c.numero_uc || c.nome_uc || '-'}</td>
+                  <tr key={c.uc_id} className="border-b border-dark-100 hover:bg-dark-50">
+                    <td className="py-3 px-3 text-center text-dark-400">{c.item || '-'}</td>
+                    <td className="py-3 px-4 font-medium text-dark-900">{c.nome_cliente}</td>
+                    <td className="py-3 px-4 text-dark-700">{c.nome_uc || '-'}</td>
+                    <td className="py-3 px-4 text-dark-600">{c.numero_uc || '-'}</td>
                     <td className="py-3 px-4 text-center">
                       {pv ? (
                         <span className="text-lg font-bold text-solar-600">{pv.percentual}%</span>
@@ -146,37 +148,25 @@ export default function Percentuais() {
                       <td className="py-3 px-4 text-center">
                         {isAdding ? (
                           <div className="flex items-center justify-center gap-2">
-                            <input
-                              type="number"
-                              value={form.percentual}
-                              onChange={(e) => setForm({ ...form, percentual: e.target.value })}
-                              placeholder="%"
-                              step="any"
-                              className="w-20 px-2 py-1.5 rounded border border-dark-300 text-sm text-center focus:outline-none focus:ring-2 focus:ring-solar-500/50"
-                            />
-                            <input
-                              type="date"
-                              value={form.data_vigencia}
-                              onChange={(e) => setForm({ ...form, data_vigencia: e.target.value })}
-                              className="px-2 py-1.5 rounded border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50"
-                            />
-                            <button
-                              onClick={() => handleAdd(c.id)}
-                              disabled={saving}
-                              className="px-3 py-1.5 rounded-lg bg-solar-500 text-dark-900 text-xs font-medium hover:bg-solar-600 transition disabled:opacity-50"
-                            >
+                            <input type="number" value={form.percentual}
+                              onChange={function (e) { setForm({ ...form, percentual: e.target.value }) }}
+                              placeholder="%" step="any"
+                              className="w-20 px-2 py-1.5 rounded border border-dark-300 text-sm text-center focus:outline-none focus:ring-2 focus:ring-solar-500/50" />
+                            <input type="date" value={form.data_vigencia}
+                              onChange={function (e) { setForm({ ...form, data_vigencia: e.target.value }) }}
+                              className="px-2 py-1.5 rounded border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" />
+                            <button onClick={function () { handleAdd(c.uc_id) }} disabled={saving}
+                              className="px-3 py-1.5 rounded-lg bg-solar-500 text-dark-900 text-xs font-medium hover:bg-solar-600 transition disabled:opacity-50">
                               {saving ? '...' : 'Salvar'}
                             </button>
-                            <button onClick={() => { setShowAdd(null); setForm({ percentual: '', data_vigencia: '' }) }}
+                            <button onClick={function () { setShowAdd(null); setForm({ percentual: '', data_vigencia: '' }) }}
                               className="text-dark-400 hover:text-dark-600">
                               <X size={16} />
                             </button>
                           </div>
                         ) : (
-                          <button
-                            onClick={() => setShowAdd(c.id)}
-                            className="text-xs text-solar-600 hover:text-solar-700 font-medium flex items-center gap-1 mx-auto"
-                          >
+                          <button onClick={function () { setShowAdd(c.uc_id) }}
+                            className="text-xs text-solar-600 hover:text-solar-700 font-medium flex items-center gap-1 mx-auto">
                             <Plus size={14} /> Alterar
                           </button>
                         )}
@@ -187,11 +177,10 @@ export default function Percentuais() {
               })}
             </tbody>
             <tfoot>
-              <tr className={cn(
-                'font-semibold',
-                completo ? 'bg-green-50' : 'bg-yellow-50'
-              )}>
+              <tr className={cn('font-semibold', completo ? 'bg-green-50' : 'bg-yellow-50')}>
+                <td className="py-3 px-3"></td>
                 <td className="py-3 px-4" colSpan={2}>Total</td>
+                <td className="py-3 px-4"></td>
                 <td className="py-3 px-4 text-center text-lg">
                   <span className={completo ? 'text-green-700' : 'text-yellow-700'}>{soma.toFixed(2)}%</span>
                 </td>
