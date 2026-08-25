@@ -1,12 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
-import api, { dedupedGet } from '@/lib/api'
-import { formatCPF, validateCPF, formatPhone } from '@/lib/utils'
-import FormField from '@/components/FormField'
-import DocumentosSection from '@/components/DocumentosSection'
+import api from '@/lib/api'
+import { cn, formatCPF, validateCPF, formatPhone } from '@/lib/utils'
 import {
   Plus, Sun, Pencil, Trash2, X, ChevronDown, ChevronUp,
-  Cpu, Upload, FileText, Eye, SunMedium,
+  Cpu, Upload, FileText, Eye, SunMedium, ToggleLeft, ToggleRight,
 } from 'lucide-react'
 
 const MARCAS_INVERSOR = ['Growatt', 'Solis', 'SAJ', 'Fronius', 'Candian', 'Deye']
@@ -56,6 +54,15 @@ export default function Usinas() {
     }
   }
 
+  async function handleToggleActive(id) {
+    try {
+      await api.put('/usinas/' + id + '/toggle-active')
+      await loadUsinas()
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Erro')
+    }
+  }
+
   function handleEdit(usina) {
     setEditingUsina(usina)
     setShowForm(true)
@@ -79,12 +86,9 @@ export default function Usinas() {
           <p className="text-dark-500 text-sm mt-1">Gerencie suas usinas e inversores</p>
         </div>
         {canCreate && (
-          <button
-            onClick={handleNew}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-solar-500 hover:bg-solar-600 text-dark-900 font-semibold text-sm transition"
-          >
-            <Plus size={18} />
-            Nova Usina
+          <button onClick={handleNew}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-solar-500 hover:bg-solar-600 text-dark-900 font-semibold text-sm transition">
+            <Plus size={18} /> Nova Usina
           </button>
         )}
       </div>
@@ -106,37 +110,42 @@ export default function Usinas() {
             const isExpanded = expandedUsina === usina.id
             return (
               <div key={usina.id} className="bg-white rounded-xl border border-dark-200 shadow-sm overflow-hidden">
-                <div
-                  className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-dark-50 transition"
-                  onClick={() => setExpandedUsina(isExpanded ? null : usina.id)}
-                >
+                <div className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-dark-50 transition"
+                  onClick={() => setExpandedUsina(isExpanded ? null : usina.id)}>
                   <div className="flex items-center gap-4">
                     <div className="w-10 h-10 rounded-lg bg-solar-100 text-solar-700 flex items-center justify-center">
                       <Sun size={20} />
                     </div>
                     <div>
-                      <p className="font-medium text-dark-900">{usina.nome}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-dark-900">{usina.nome}</p>
+                        {usina.activo === false && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-medium">Inativa</span>
+                        )}
+                      </div>
                       <p className="text-sm text-dark-500">
                         {usina.potencia_kwp ? usina.potencia_kwp + ' kWp' : 'Potencia nao definida'}
                         {usina.inversores?.length > 0 && ' - ' + usina.inversores.length + ' inversor(es)'}
-                        {usina.placas?.length > 0 && ' - ' + usina.placas.length + ' placa(s)'}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     {canEdit && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleEdit(usina) }}
-                        className="p-2 rounded-lg text-dark-400 hover:text-solar-600 hover:bg-dark-100 transition"
-                      >
+                      <button onClick={(e) => { e.stopPropagation(); handleEdit(usina) }}
+                        className="p-2 rounded-lg text-dark-400 hover:text-solar-600 hover:bg-dark-100 transition">
                         <Pencil size={18} />
                       </button>
                     )}
+                    {canEdit && (
+                      <button onClick={(e) => { e.stopPropagation(); handleToggleActive(usina.id) }}
+                        className={cn('p-2 rounded-lg transition', usina.activo !== false ? 'text-lac-600 hover:bg-lac-50' : 'text-dark-400 hover:bg-dark-100')}
+                        title={usina.activo !== false ? 'Desativar' : 'Ativar'}>
+                        {usina.activo !== false ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
+                      </button>
+                    )}
                     {canDelete && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDelete(usina.id, usina.nome) }}
-                        className="p-2 rounded-lg text-dark-400 hover:text-red-500 hover:bg-dark-100 transition"
-                      >
+                      <button onClick={(e) => { e.stopPropagation(); handleDelete(usina.id, usina.nome) }}
+                        className="p-2 rounded-lg text-dark-400 hover:text-red-500 hover:bg-dark-100 transition">
                         <Trash2 size={18} />
                       </button>
                     )}
@@ -172,7 +181,7 @@ export default function Usinas() {
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
                           <Cpu size={16} className="text-lac-600" />
-                          <h3 className="text-sm font-semibold text-dark-700">Inversores</h3>
+                          <h3 className="text-sm font-semibold text-dark-700">Inversores e Placas</h3>
                         </div>
                         {canEdit && <InversorAddButton usinaId={usina.id} onSaved={loadUsinas} />}
                       </div>
@@ -187,26 +196,7 @@ export default function Usinas() {
                       )}
                     </div>
 
-                    <div className="mt-5">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <SunMedium size={16} className="text-solar-600" />
-                          <h3 className="text-sm font-semibold text-dark-700">Placas Solares</h3>
-                        </div>
-                        {canEdit && <PlacaAddButton usinaId={usina.id} onSaved={loadUsinas} />}
-                      </div>
-                      {usina.placas?.length > 0 ? (
-                        <div className="space-y-2">
-                          {usina.placas.map((placa) => (
-                            <PlacaItem key={placa.id} placa={placa} canEdit={canEdit} canDelete={canDelete} onSaved={loadUsinas} />
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-sm text-dark-400">Nenhuma placa cadastrada</p>
-                      )}
-                    </div>
-
-                    <DocumentosSection entityIdField="usina_id" entityId={usina.id} tipos={TIPOS_DOC_USINA} canEdit={canEdit} canDelete={canDelete} excludeTipos={['crea']} />
+                    <DocumentosSection usinaId={usina.id} canEdit={canEdit} canDelete={canDelete} />
                   </div>
                 )}
               </div>
@@ -338,6 +328,17 @@ function UsinaForm({ usina, onClose, onSaved }) {
   )
 }
 
+function FormField({ label, value, onChange, type = 'text', placeholder, required }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-dark-600 mb-1">{label}</label>
+      <input type={type} value={value} onChange={(e) => onChange(e.target.value)}
+        className="w-full px-4 py-2.5 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50"
+        placeholder={placeholder} required={required} step={type === 'number' ? 'any' : undefined} />
+    </div>
+  )
+}
+
 function EngenheiroSection({ usina, canEdit, onSaved }) {
   const [editing, setEditing] = useState(false)
   const [nome, setNome] = useState(usina.engenheiro_nome || '')
@@ -350,7 +351,7 @@ function EngenheiroSection({ usina, canEdit, onSaved }) {
 
   async function loadDocs() {
     try {
-      const { data } = await dedupedGet('/documentos/?usina_id=' + usina.id)
+      const { data } = await api.get('/documentos/?usina_id=' + usina.id)
       setDocs(data.filter((d) => d.tipo === 'crea'))
     } catch (err) {
       console.error('Erro:', err)
@@ -521,6 +522,7 @@ function InversorAddButton({ usinaId, onSaved }) {
 
 function InversorItem({ inversor, canEdit, canDelete, onSaved }) {
   const [editing, setEditing] = useState(false)
+  const [showPlacas, setShowPlacas] = useState(false)
   const [form, setForm] = useState({ marca: inversor.marca, potencia_kwp: inversor.potencia_kwp, tipo: inversor.tipo, ordem: inversor.ordem })
 
   async function handleSave() {
@@ -543,6 +545,8 @@ function InversorItem({ inversor, canEdit, canDelete, onSaved }) {
     }
   }
 
+  var totalPlacasKwp = (inversor.placas || []).reduce(function (sum, p) { return sum + (p.potencia_wp * p.quantidade / 1000) }, 0)
+
   if (editing) {
     return (
       <div className="flex items-center gap-2 p-2 bg-dark-50 rounded-lg">
@@ -559,33 +563,57 @@ function InversorItem({ inversor, canEdit, canDelete, onSaved }) {
   }
 
   return (
-    <div className="flex items-center justify-between p-2 bg-dark-50 rounded-lg">
-      <div className="flex items-center gap-3">
-        <Cpu size={16} className="text-lac-500" />
-        <span className="text-sm font-medium text-dark-700">{inversor.marca}</span>
-        <span className="text-sm text-dark-500">{inversor.potencia_kwp} kWp</span>
-        <span className="text-xs text-dark-400">({inversor.tipo})</span>
+    <div className="bg-dark-50 rounded-lg overflow-hidden">
+      <div className="flex items-center justify-between p-2">
+        <div className="flex items-center gap-3 cursor-pointer" onClick={() => setShowPlacas(!showPlacas)}>
+          <Cpu size={16} className="text-lac-500" />
+          <span className="text-sm font-medium text-dark-700">{inversor.marca}</span>
+          <span className="text-sm text-dark-500">{inversor.potencia_kwp} kWp</span>
+          <span className="text-xs text-dark-400">({inversor.tipo})</span>
+          {inversor.placas?.length > 0 && (
+            <span className="text-xs text-solar-600 font-medium">{inversor.placas.length} placa(s) - {totalPlacasKwp.toFixed(2)} kWp</span>
+          )}
+          <ChevronDown size={14} className={cn('text-dark-400 transition-transform', showPlacas && 'rotate-180')} />
+        </div>
+        <div className="flex items-center gap-1">
+          {canEdit && (<button onClick={() => setEditing(true)} className="p-1.5 rounded text-dark-400 hover:text-solar-600 transition"><Pencil size={14} /></button>)}
+          {canDelete && (<button onClick={handleDelete} className="p-1.5 rounded text-dark-400 hover:text-red-500 transition"><Trash2 size={14} /></button>)}
+        </div>
       </div>
-      <div className="flex items-center gap-1">
-        {canEdit && (<button onClick={() => setEditing(true)} className="p-1.5 rounded text-dark-400 hover:text-solar-600 transition"><Pencil size={14} /></button>)}
-        {canDelete && (<button onClick={handleDelete} className="p-1.5 rounded text-dark-400 hover:text-red-500 transition"><Trash2 size={14} /></button>)}
-      </div>
+
+      {showPlacas && (
+        <div className="px-3 pb-3 border-t border-dark-200 mt-1 pt-2">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium text-dark-500">Placas conectadas a este inversor</span>
+            {canEdit && <PlacaAddButton inversorId={inversor.id} onSaved={onSaved} />}
+          </div>
+          {inversor.placas?.length > 0 ? (
+            <div className="space-y-1">
+              {inversor.placas.map((placa) => (
+                <PlacaItem key={placa.id} placa={placa} canDelete={canDelete} onSaved={onSaved} />
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-dark-400">Nenhuma placa conectada</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }
 
-function PlacaAddButton({ usinaId, onSaved }) {
+function PlacaAddButton({ inversorId, onSaved }) {
   const [show, setShow] = useState(false)
   const [saving, setSaving] = useState(false)
-    const [form, setForm] = useState({ potencia_wp: '', quantidade: 1 })
+  const [form, setForm] = useState({ potencia_wp: '', quantidade: 1 })
 
   async function handleSubmit(e) {
     e.preventDefault()
     setSaving(true)
     try {
-      await api.post('/placas/' + usinaId, { ...form, potencia_wp: parseFloat(form.potencia_wp), quantidade: parseInt(form.quantidade) })
+      await api.post('/placas/' + inversorId, { potencia_wp: parseFloat(form.potencia_wp), quantidade: parseInt(form.quantidade) })
       setShow(false)
-      setForm({ marca: '', modelo: '', potencia_wp: '', quantidade: 1 })
+      setForm({ potencia_wp: '', quantidade: 1 })
       await onSaved()
     } catch (err) {
       alert(err.response?.data?.detail || 'Erro ao adicionar placa')
@@ -597,7 +625,7 @@ function PlacaAddButton({ usinaId, onSaved }) {
   if (!show) {
     return (
       <button onClick={() => setShow(true)} className="text-xs text-solar-600 hover:text-solar-700 font-medium flex items-center gap-1">
-        <Plus size={14} /> Adicionar
+        <Plus size={14} /> Adicionar placa
       </button>
     )
   }
@@ -605,9 +633,9 @@ function PlacaAddButton({ usinaId, onSaved }) {
   return (
     <form onSubmit={handleSubmit} className="flex items-center gap-2">
       <input type="number" value={form.potencia_wp} onChange={(e) => setForm({ ...form, potencia_wp: e.target.value })}
-        placeholder="Wp" className="px-3 py-1.5 rounded-lg border border-dark-300 text-sm w-16 focus:outline-none focus:ring-2 focus:ring-solar-500/50" step="any" required />
+        placeholder="Wp" className="px-3 py-1.5 rounded-lg border border-dark-300 text-sm w-20 focus:outline-none focus:ring-2 focus:ring-solar-500/50" step="any" required />
       <input type="number" value={form.quantidade} onChange={(e) => setForm({ ...form, quantidade: e.target.value })}
-        placeholder="Qtd" className="px-3 py-1.5 rounded-lg border border-dark-300 text-sm w-14 focus:outline-none focus:ring-2 focus:ring-solar-500/50" min="1" required />
+        placeholder="Qtd" className="px-3 py-1.5 rounded-lg border border-dark-300 text-sm w-16 focus:outline-none focus:ring-2 focus:ring-solar-500/50" min="1" required />
       <button type="submit" disabled={saving} className="px-3 py-1.5 rounded-lg bg-solar-500 text-dark-900 text-sm font-medium hover:bg-solar-600 transition disabled:opacity-50">
         {saving ? '...' : 'OK'}
       </button>
@@ -616,7 +644,7 @@ function PlacaAddButton({ usinaId, onSaved }) {
   )
 }
 
-function PlacaItem({ placa, canEdit, canDelete, onSaved }) {
+function PlacaItem({ placa, canDelete, onSaved }) {
   async function handleDelete() {
     if (!confirm('Excluir esta placa?')) return
     try {
@@ -628,17 +656,123 @@ function PlacaItem({ placa, canEdit, canDelete, onSaved }) {
   }
 
   return (
-    <div className="flex items-center justify-between p-2 bg-dark-50 rounded-lg">
-      <div className="flex items-center gap-3">
-        <SunMedium size={16} className="text-solar-500" />
-        <span className="text-sm text-dark-500">{placa.potencia_wp} Wp</span>
+    <div className="flex items-center justify-between p-1.5 bg-white rounded">
+      <div className="flex items-center gap-2">
+        <SunMedium size={14} className="text-solar-500" />
+        <span className="text-xs text-dark-600">{placa.potencia_wp} Wp</span>
         <span className="text-xs text-dark-400">x{placa.quantidade}</span>
-        <span className="text-xs text-lac-600 font-medium">({((placa.potencia_wp * placa.quantidade) / 1000).toFixed(2)} kWp total)</span>
+        <span className="text-xs text-lac-600 font-medium">({((placa.potencia_wp * placa.quantidade) / 1000).toFixed(2)} kWp)</span>
       </div>
-      <div className="flex items-center gap-1">
-        {canDelete && (<button onClick={handleDelete} className="p-1.5 rounded text-dark-400 hover:text-red-500 transition"><Trash2 size={14} /></button>)}
-      </div>
+      {canDelete && (
+        <button onClick={handleDelete} className="p-1 rounded text-dark-400 hover:text-red-500 transition"><Trash2 size={12} /></button>
+      )}
     </div>
   )
 }
 
+function DocumentosSection({ usinaId, canEdit, canDelete }) {
+  const [docs, setDocs] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [tipoUpload, setTipoUpload] = useState('')
+
+  useEffect(() => { loadDocs() }, [usinaId])
+
+  async function loadDocs() {
+    setLoading(true)
+    try {
+      const { data } = await api.get('/documentos/?usina_id=' + usinaId)
+      setDocs(data.filter((d) => d.tipo !== 'crea'))
+    } catch (err) {
+      console.error('Erro:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleUpload(e) {
+    const file = e.target.files[0]
+    if (!file || !tipoUpload) return
+    setUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('tipo', tipoUpload)
+      formData.append('usina_id', usinaId)
+      await api.post('/documentos/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+      setTipoUpload('')
+      await loadDocs()
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Erro no upload')
+    } finally {
+      setUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  async function handleDelete(docId) {
+    if (!confirm('Excluir este documento?')) return
+    try {
+      await api.delete('/documentos/' + docId)
+      await loadDocs()
+    } catch (err) {
+      alert('Erro ao excluir')
+    }
+  }
+
+  var tipoLabel = function (tipo) {
+    var found = TIPOS_DOC_USINA.find(function (t) { return t.key === tipo })
+    return found ? found.label : tipo
+  }
+
+  return (
+    <div className="mt-5">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <FileText size={16} className="text-dark-600" />
+          <h3 className="text-sm font-semibold text-dark-700">Documentos</h3>
+        </div>
+        {canEdit && (
+          <div className="flex items-center gap-2">
+            <select value={tipoUpload} onChange={(e) => setTipoUpload(e.target.value)}
+              className="px-2 py-1.5 rounded-lg border border-dark-300 text-xs focus:outline-none focus:ring-2 focus:ring-solar-500/50">
+              <option value="">Tipo do documento</option>
+              {TIPOS_DOC_USINA.map((t) => (<option key={t.key} value={t.key}>{t.label}</option>))}
+            </select>
+            <label className={cn(
+              'flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition',
+              tipoUpload ? 'bg-solar-500 text-dark-900 hover:bg-solar-600' : 'bg-dark-200 text-dark-400 cursor-not-allowed'
+            )}>
+              <Upload size={14} />
+              {uploading ? 'Enviando...' : 'Upload'}
+              <input type="file" className="hidden" onChange={handleUpload} disabled={!tipoUpload || uploading} accept=".pdf,.jpg,.jpeg,.png" />
+            </label>
+          </div>
+        )}
+      </div>
+      {loading ? (
+        <p className="text-sm text-dark-400">Carregando...</p>
+      ) : docs.length === 0 ? (
+        <p className="text-sm text-dark-400">Nenhum documento enviado</p>
+      ) : (
+        <div className="space-y-2">
+          {docs.map((doc) => (
+            <div key={doc.id} className="flex items-center justify-between p-2 bg-dark-50 rounded-lg">
+              <div className="flex items-center gap-3">
+                <FileText size={16} className="text-dark-500" />
+                <div>
+                  <span className="text-sm font-medium text-dark-700">{doc.nome_arquivo}</span>
+                  <span className="text-xs text-dark-400 ml-2">{tipoLabel(doc.tipo)}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <a href={doc.url} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded text-dark-400 hover:text-solar-600 transition"><Eye size={14} /></a>
+                {canDelete && (<button onClick={() => handleDelete(doc.id)} className="p-1.5 rounded text-dark-400 hover:text-red-500 transition"><Trash2 size={14} /></button>)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}

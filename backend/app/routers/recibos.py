@@ -6,6 +6,10 @@ from app.schemas.recibos import ReciboCreate, ReciboUpdate
 from fpdf import FPDF
 import io
 import re
+import tempfile
+import os
+import zipfile
+import shutil
 
 router = APIRouter()
 
@@ -251,7 +255,7 @@ async def exportar_recibo_pdf(
     recibo_id: int,
     user: dict = Depends(require_permission("recibos", "visualizar")),
 ):
-    """Gera PDF do recibo no formato da planilha (LAC Solar)."""
+    """Gera recibo PPTX a partir do template e retorna PDF ou PPTX."""
     sb = get_supabase_admin()
 
     recibo = sb.table("recibos").select("*").eq("id", recibo_id).single().execute()
@@ -262,9 +266,7 @@ async def exportar_recibo_pdf(
     cliente = sb.table("clientes").select("*").eq("id", r["cliente_id"]).single().execute()
     c = cliente.data
 
-    # Recibos gerados apos a consolidacao por titular tem `recibo_itens` -
-    # usa exatamente essas faturas (podem ser de varias UCs/clientes). Recibos
-    # antigos nao tem: cai no comportamento anterior (faturas do cliente_id no mes).
+    # Buscar faturas do recibo
     itens = sb.table("recibo_itens").select("fatura_id").eq("recibo_id", recibo_id).execute()
     fatura_ids = [i["fatura_id"] for i in itens.data or []]
 
@@ -272,183 +274,181 @@ async def exportar_recibo_pdf(
     if fatura_ids:
         faturas_query = faturas_query.in_("id", fatura_ids)
     else:
-        faturas_query = (
-            faturas_query
-            .eq("cliente_id", r["cliente_id"])
-            .eq("mes_referencia", r["mes_referencia"])
-        )
+        faturas_query = faturas_query.eq("cliente_id", r["cliente_id"]).eq("mes_referencia", r["mes_referencia"])
     faturas = faturas_query.execute()
 
     linhas = sorted(
         faturas.data or [],
-        key=lambda f: (
-            (f.get("clientes") or {}).get("item") is None,
-            (f.get("clientes") or {}).get("item") or 0,
-            f["id"],
-        ),
+        key=lambda f: ((f.get("clientes") or {}).get("item") is None, (f.get("clientes") or {}).get("item") or 0, f["id"]),
     )
 
     mes_ref = r["mes_referencia"]
     ano = int(mes_ref.split("-")[0])
     mes = int(mes_ref.split("-")[1])
-    mes_nome = MESES[mes]
-    mes_abrev = MESES_ABREV[mes]
 
-    pdf = FPDF(orientation="P", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
+    MESES_CURTO = ['', 'JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ']
+    MESES_EXTENSO = ['', 'janeiro', 'fevereiro', 'marco', 'abril', 'maio', 'junho',
+                     'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
 
-    # === FAIXA DO TOPO: "logo" em texto nos cantos + 4 caixas destacadas ===
-    def logo_texto(x):
-        pdf.set_xy(x, 8)
-        pdf.set_fill_color(255, 193, 7)  # solar-500, cor da marca
-        pdf.set_text_color(40, 40, 40)
-        pdf.set_font("Helvetica", "B", 11)
-        pdf.cell(22, 10, "LAC SOLAR", border=0, fill=True, align="C")
-        pdf.set_text_color(0, 0, 0)
+    valor_pago = r.get("valor_pago") or 0
+    valor_kwh = c.get("valor_kwh") or 0.75
+    dia_venc = c.get("dia_vencimento") or 5
 
-    logo_texto(10)
-    logo_texto(176)
+    f1 = linhas[0] if linhas else {}
+    cli1 = f1.get("clientes") or {}
+    total_injetado = sum(f.get("kwh_injetado") or 0 for f in linhas)
 
-    caixas = [
-        ("Recibo:", f"{mes_abrev}-{str(ano)[2:]}"),
-        ("Valor:", f"R$ {r['valor_pago']:.2f}"),
-        ("Vencimento:", f"DIA {c.get('dia_vencimento', 5)}"),
-        ("Valor (kwh):", f"R$ {c.get('valor_kwh', 0.75):.2f}"),
-    ]
-    caixa_w = 33
-    x = 35
-    for label, valor in caixas:
-        pdf.set_xy(x, 8)
-        pdf.set_font("Helvetica", "", 6.5)
-        pdf.cell(caixa_w, 4, label, align="C")
-        pdf.set_xy(x, 12)
-        pdf.set_fill_color(204, 229, 255)
-        pdf.set_font("Helvetica", "B", 8)
-        pdf.cell(caixa_w, 6, valor, border=1, fill=True, align="C")
-        x += caixa_w + 2
+    nome_uc_tabela = cli1.get("nome_uc") or c.get("nome_uc") or c.get("nome", "")
+    if cli1.get("poste"):
+        nome_uc_tabela = nome_uc_tabela + " (poste " + str(cli1["poste"]) + ")"
 
-    pdf.set_y(24)
-    pdf.set_line_width(0.2)
-    pdf.line(10, 24, 200, 24)
+    # Historico ultimos 6 meses
+    historico = []
+    for i in range(5, -1, -1):
+        m = mes - i
+        a = ano
+        if m <= 0:
+            m += 12
+            a -= 1
+        ref = str(a) + "-" + str(m).zfill(2) + "-01"
+        fat = sb.table("faturas").select("kwh_injetado").eq("cliente_id", r["cliente_id"]).eq("mes_referencia", ref).execute()
+        kwh = sum(f.get("kwh_injetado") or 0 for f in fat.data or [])
+        historico.append({"mes": MESES_CURTO[m], "kwh": int(kwh)})
 
-    # === PRODUTOR / RECEBEDOR ===
-    pdf.set_y(28)
-    pdf.set_font("Helvetica", "", 8)
-    pdf.cell(0, 4.5, "PRODUTOR ENERGETICO: LAC Solar Ltda", ln=True)
-    pdf.cell(0, 4.5, f"RECEBEDOR ENERGETICO: {c.get('nome', '')}", ln=True)
-    pdf.cell(0, 4.5, f"CPF: {c.get('cpf_cnpj', '')}", ln=True)
-    pdf.ln(3)
+    # Montar dados de substituicao
+    valor_fmt = "R$ " + "{:,.2f}".format(valor_pago).replace(",", "X").replace(".", ",").replace("X", ".")
+    valor_kwh_fmt = "R$ " + "{:.2f}".format(valor_kwh).replace(".", ",")
 
-    # === TABELA DE UCs ===
-    pdf.set_font("Helvetica", "B", 7)
-    pdf.set_fill_color(240, 240, 240)
+    substituicoes = {
+        "Mauro Nascimento Braga (poste 3)": str(nome_uc_tabela),
+        "Mauro Nascimento Braga": str(c.get("nome", "")),
+        "000000126": str(recibo_id).zfill(9),
+        "AGO/26": MESES_CURTO[mes] + "/" + str(ano)[2:],
+        "05/09/2026": str(dia_venc).zfill(2) + "/" + str(mes).zfill(2) + "/" + str(ano),
+        "01/08/2026": "01/" + str(mes).zfill(2) + "/" + str(ano),
+        "R$ 177,80": valor_fmt,
+        "CPF: 110.190.771-15 End.: Av. das Torres, 456 Poste 3 Cuiab\u00e1/MT - CEP: 78000-000": "CPF: " + str(c.get("cpf_cnpj", "")) + " End.: " + str(c.get("endereco", "")),
+        "R$ 0,70": valor_kwh_fmt,
+        ">254<": ">" + str(int(total_injetado)) + "<",
+        "6/4754860-7": str(cli1.get("numero_uc") or c.get("numero_uc") or ""),
+        ">868<": ">" + (("{:.0f}".format(f1["leitura_inicial"])) if f1.get("leitura_inicial") else "") + "<",
+        "1.122": ("{:.0f}".format(f1["leitura_final"])) if f1.get("leitura_final") else "",
+        "2.807": ("{:.0f}".format(f1["saldo_kwh"])) if f1.get("saldo_kwh") else "0",
+        ">198<": ">" + str(historico[0]["kwh"]) + "<",
+        ">MAR<": ">" + historico[0]["mes"] + "<",
+        ">215<": ">" + str(historico[1]["kwh"]) + "<",
+        ">ABR<": ">" + historico[1]["mes"] + "<",
+        ">230<": ">" + str(historico[2]["kwh"]) + "<",
+        ">MAI<": ">" + historico[2]["mes"] + "<",
+        ">245<": ">" + str(historico[3]["kwh"]) + "<",
+        ">JUN<": ">" + historico[3]["mes"] + "<",
+        ">260<": ">" + str(historico[4]["kwh"]) + "<",
+        ">JUL<": ">" + historico[4]["mes"] + "<",
+        ">AGO<": ">" + historico[5]["mes"] + "<",
+        "01 de agosto de 2026": "01 de " + MESES_EXTENSO[mes] + " de " + str(ano),
+    }
 
-    cols = [
-        ("Nome da UC", 40),
-        ("Numero UC", 22),
-        ("Inicial", 18),
-        ("Final", 18),
-        ("Consumo", 18),
-        ("KwH Injetado", 20),
-        ("Saldo ACM", 20),
-        ("Valor Total", 22),
-    ]
+    # Descompactar template
+    template_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "templates", "recibo_template.pptx")
+    temp_dir = tempfile.mkdtemp()
+    output_path = os.path.join(temp_dir, "recibo.pptx")
+    unpacked_dir = os.path.join(temp_dir, "unpacked")
 
-    # Cabecalho da tabela
-    pdf.cell(cols[0][1] + cols[1][1], 5, "Objeto da Contratacao", border=1, fill=True, align="C")
-    pdf.cell(cols[2][1] + cols[3][1] + cols[4][1], 5, "Dados da Leitura", border=1, fill=True, align="C")
-    pdf.cell(cols[5][1], 5, "KwH injetado", border=1, fill=True, align="C")
-    pdf.cell(cols[6][1], 5, "Saldo ACM(Kwh)", border=1, fill=True, align="C")
-    pdf.cell(cols[7][1], 5, "Valor Total", border=1, fill=True, align="C")
-    pdf.ln()
+    with zipfile.ZipFile(template_path, 'r') as z:
+        z.extractall(unpacked_dir)
 
-    pdf.set_font("Helvetica", "B", 6)
-    for label, w in cols:
-        pdf.cell(w, 5, label, border=1, fill=True, align="C")
-    pdf.ln()
+    # Substituir textos no slide
+    slide_path = os.path.join(unpacked_dir, "ppt", "slides", "slide1.xml")
+    with open(slide_path, "r", encoding="utf-8") as f:
+        xml_content = f.read()
 
-    # Dados das faturas (1 linha por UC)
-    pdf.set_font("Helvetica", "", 6.5)
-    total_injetado = 0
-    total_saldo = 0
-    total_valor = 0
+    for antigo, novo in substituicoes.items():
+        xml_content = xml_content.replace(antigo, novo)
 
-    for f in linhas:
-        cliente_uc = f.get("clientes") or {}
-        nome_uc = cliente_uc.get("nome_uc") or ""
-        poste = cliente_uc.get("poste")
-        if poste:
-            nome_uc = f"{nome_uc} (poste {poste})"
-        numero_uc = cliente_uc.get("numero_uc") or ""
-        lei_ini = f"{f['leitura_inicial']:.0f}" if f.get("leitura_inicial") else ""
-        lei_fin = f"{f['leitura_final']:.0f}" if f.get("leitura_final") else ""
-        consumo = f"{f['consumo_kwh']:.0f}" if f.get("consumo_kwh") else ""
-        injetado = f"{f['kwh_injetado']:.0f}" if f.get("kwh_injetado") else "0"
-        saldo = f"{f['saldo_kwh']:.0f}" if f.get("saldo_kwh") else "0"
-        valor = f"{f['valor_final']:.2f}" if f.get("valor_final") else "0.00"
+    with open(slide_path, "w", encoding="utf-8") as f:
+        f.write(xml_content)
 
-        total_injetado += f.get("kwh_injetado") or 0
-        total_saldo += f.get("saldo_kwh") or 0
-        total_valor += f.get("valor_final") or 0
+    # Gerar QR Code PIX e substituir imagem
+    try:
+        from app.core.pix import gerar_qrcode_pix_bytes
+        from PIL import Image
 
-        pdf.cell(cols[0][1], 4.5, nome_uc[:28], border=1)
-        pdf.cell(cols[1][1], 4.5, numero_uc, border=1, align="C")
-        pdf.cell(cols[2][1], 4.5, lei_ini, border=1, align="R")
-        pdf.cell(cols[3][1], 4.5, lei_fin, border=1, align="R")
-        pdf.cell(cols[4][1], 4.5, consumo, border=1, align="R")
-        pdf.cell(cols[5][1], 4.5, injetado, border=1, align="R")
-        pdf.cell(cols[6][1], 4.5, saldo, border=1, align="R")
-        pdf.cell(cols[7][1], 4.5, f"R$ {valor}", border=1, align="R")
-        pdf.ln()
+        qr_bytes = gerar_qrcode_pix_bytes("65999211041", "LAC Solar Ltda", "Cuiaba", valor_pago)
+        png_img = Image.open(io.BytesIO(qr_bytes))
+        rgb_img = png_img.convert("RGB")
+        jpg_buffer = io.BytesIO()
+        rgb_img.save(jpg_buffer, format="JPEG", quality=95)
+        jpg_bytes = jpg_buffer.getvalue()
 
-    # Linha de totais
-    pdf.set_font("Helvetica", "B", 6.5)
-    pdf.cell(cols[0][1] + cols[1][1] + cols[2][1] + cols[3][1] + cols[4][1], 5, "", border=1)
-    pdf.cell(cols[5][1], 5, f"{total_injetado:.0f}", border=1, align="R")
-    pdf.cell(cols[6][1], 5, f"{total_saldo:.0f}", border=1, align="R")
-    pdf.cell(cols[7][1], 5, f"R$ {total_valor:.2f}", border=1, align="R")
-    pdf.ln()
+        media_path = os.path.join(unpacked_dir, "ppt", "media", "image2.jpg")
 
-    # Economia
-    pdf.ln(3)
-    pdf.set_font("Helvetica", "", 7)
-    economia_mensal = r.get("economia_mensal") or 0
-    economia_ano = r.get("economia_acumulada_ano") or 0
-    pdf.cell(0, 4.5, f"Economia produzida no mes: R$ {economia_mensal:.2f}", ln=True)
-    pdf.cell(0, 4.5, f"No Ano ({ano}): R$ {economia_ano:.2f}", ln=True)
+        # Adicionar relationship pro QR Code
+        rels_path = os.path.join(unpacked_dir, "ppt", "slides", "_rels", "slide1.xml.rels")
+        with open(rels_path, "r", encoding="utf-8") as rf:
+            rels_content = rf.read()
+        if "image2.jpg" not in rels_content:
+            rels_content = rels_content.replace("</Relationships>", '<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image2.jpg"/></Relationships>')
+            with open(rels_path, "w", encoding="utf-8") as rf:
+                rf.write(rels_content)
 
-    # Dados para quitacao
-    pdf.ln(4)
-    pdf.set_font("Helvetica", "B", 7)
-    pdf.cell(0, 4.5, "Dados para quitacao:", ln=True)
-    pdf.set_font("Helvetica", "", 7)
-    if c.get("dados_pagamento"):
-        pdf.cell(0, 4.5, c["dados_pagamento"], ln=True)
-    if c.get("pix"):
-        pdf.cell(0, 4.5, c["pix"], ln=True)
+        # Adicionar pic element pro QR Code no slide
+        slide_path_qr = os.path.join(unpacked_dir, "ppt", "slides", "slide1.xml")
+        with open(slide_path_qr, "r", encoding="utf-8") as sf:
+            slide_content = sf.read()
+        if "rId4" not in slide_content:
+            qr_pic = '<p:pic xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:nvPicPr><p:cNvPr id="9998" name="QR PIX"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="rId4"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="7600000" y="7900000"/><a:ext cx="1300000" cy="1300000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>'
+            slide_content = slide_content.replace("</p:spTree>", qr_pic + "</p:spTree>")
+            with open(slide_path_qr, "w", encoding="utf-8") as sf:
+                sf.write(slide_content)
+        with open(media_path, "wb") as f:
+            f.write(jpg_bytes)
+    except Exception as e:
+        print("Erro ao gerar QR Code: " + str(e))
 
-    # Assinatura
-    pdf.ln(8)
-    pdf.set_font("Helvetica", "", 7)
-    pdf.cell(0, 4.5, f"Cuiaba-MT, {mes_nome}/{ano}", ln=True, align="R")
-    pdf.ln(8)
-    pdf.set_font("Helvetica", "B", 8)
-    pdf.cell(0, 5, "Luiz Antonio de Carvalho", ln=True, align="C")
-    pdf.set_font("Helvetica", "", 7)
-    pdf.cell(0, 4.5, "PRODUTOR ENERGETICO", ln=True, align="C")
+    # Reempacotar PPTX
+    with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zout:
+        for root_dir, dirs, files in os.walk(unpacked_dir):
+            for file in files:
+                file_path = os.path.join(root_dir, file)
+                arcname = os.path.relpath(file_path, unpacked_dir)
+                zout.write(file_path, arcname)
 
-    # Gerar bytes
-    pdf_bytes = pdf.output()
-    buffer = io.BytesIO(pdf_bytes)
-    nome_arquivo = f"recibo_{c.get('nome', 'cliente').replace(' ', '_')}_{mes_nome}_{ano}.pdf"
+    shutil.rmtree(unpacked_dir, ignore_errors=True)
 
+    # Tentar converter pra PDF
+    pdf_path = output_path.replace(".pptx", ".pdf")
+    try:
+        import subprocess
+        soffice_path = r"C:\Program Files\LibreOffice\program\soffice.exe"
+        subprocess.run(
+            [soffice_path, "--headless", "--convert-to", "pdf", "--outdir", os.path.dirname(output_path), output_path],
+            capture_output=True, timeout=30,
+        )
+        if os.path.exists(pdf_path):
+            with open(pdf_path, "rb") as f:
+                pdf_bytes = f.read()
+            os.remove(output_path)
+            os.remove(pdf_path)
+            nome_arquivo = "recibo_" + c.get("nome", "cliente").replace(" ", "_") + "_" + MESES_CURTO[mes] + "_" + str(ano) + ".pdf"
+            return StreamingResponse(
+                io.BytesIO(pdf_bytes),
+                media_type="application/pdf",
+                headers={"Content-Disposition": "attachment; filename=" + nome_arquivo},
+            )
+    except Exception:
+        pass
+
+    # Sem LibreOffice: retorna PPTX
+    with open(output_path, "rb") as f:
+        pptx_bytes = f.read()
+    os.remove(output_path)
+
+    nome_arquivo = "recibo_" + c.get("nome", "cliente").replace(" ", "_") + "_" + MESES_CURTO[mes] + "_" + str(ano) + ".pptx"
     return StreamingResponse(
-        buffer,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={nome_arquivo}"},
+        io.BytesIO(pptx_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        headers={"Content-Disposition": "attachment; filename=" + nome_arquivo},
     )
-
 
 def _somar_economia(faturas, tarifa_energisa):
     """Soma a economia (kwh injetado * tarifa Energisa - valor pago) de uma

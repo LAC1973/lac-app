@@ -6,15 +6,15 @@ from app.schemas.usinas import PlacaBase
 router = APIRouter()
 
 
-@router.post("/{usina_id}")
+@router.post("/{inversor_id}")
 async def create_placa(
-    usina_id: int,
+    inversor_id: int,
     req: PlacaBase,
     user: dict = Depends(require_permission("usinas", "editar")),
 ):
     sb = get_supabase_admin()
     data = req.model_dump()
-    data["usina_id"] = usina_id
+    data["inversor_id"] = inversor_id
     result = sb.table("placas").insert(data).execute()
     return result.data[0]
 
