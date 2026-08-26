@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from PIL import ImageFile
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from app.core.auth import require_permission
 from app.core.supabase import get_supabase_admin
 from app.schemas.clientes import PercentualCreate
@@ -131,3 +132,25 @@ async def delete_percentual(
     sb = get_supabase_admin()
     sb.table("percentuais").delete().eq("id", percentual_id).execute()
     return {"message": "Percentual excluído"}
+
+@router.post("/{percentual_id}/documento")
+async def upload_documento_percentual(
+    percentual_id: int,
+    file: UploadFile = File(...),
+    user: dict = Depends(require_permission("percentuais", "criar")),
+):  
+    """Upload de protocolo/aceite da Energisa para alteracao de percentual."""
+    from app.core.supabase import get_supabase_admin
+    import uuid
+
+    sb = get_supabase_admin()
+    content = await file.read()
+    ext = file.filename.split(".")[-1] if "." in file.filename else "pdf"
+    path = f"percentuais/{percentual_id}/{uuid.uuid4()}.{ext}"
+
+    sb.storage.from_("documentos").upload(path, content, {"content-type": file.content_type})
+    url = sb.storage.from_("documentos").get_public_url(path)
+
+    sb.table("percentuais").update({"documento_url": url, "documento_nome": file.filename}).eq("id", percentual_id).execute()
+
+    return {"url": url, "nome": file.filename}

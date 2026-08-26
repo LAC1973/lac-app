@@ -11,7 +11,8 @@ export default function Percentuais() {
   const [dados, setDados] = useState(null)
   const [loading, setLoading] = useState(false)
   const [showAdd, setShowAdd] = useState(null)
-  const [form, setForm] = useState({ percentual: '', data_vigencia: '' })
+  const [form, setForm] = useState({ percentual: '', data_vigencia: new Date().toISOString().split('T')[0] })
+  const [arquivoProtocolo, setArquivoProtocolo] = useState(null)
   const [saving, setSaving] = useState(false)
 
   var canEdit = hasPermission('percentuais', 'criar')
@@ -147,22 +148,31 @@ export default function Percentuais() {
                     {canEdit && (
                       <td className="py-3 px-4 text-center">
                         {isAdding ? (
-                          <div className="flex items-center justify-center gap-2">
-                            <input type="number" value={form.percentual}
-                              onChange={function (e) { setForm({ ...form, percentual: e.target.value }) }}
-                              placeholder="%" step="any"
-                              className="w-20 px-2 py-1.5 rounded border border-dark-300 text-sm text-center focus:outline-none focus:ring-2 focus:ring-solar-500/50" />
-                            <input type="date" value={form.data_vigencia}
-                              onChange={function (e) { setForm({ ...form, data_vigencia: e.target.value }) }}
-                              className="px-2 py-1.5 rounded border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" />
-                            <button onClick={function () { handleAdd(c.uc_id) }} disabled={saving}
-                              className="px-3 py-1.5 rounded-lg bg-solar-500 text-dark-900 text-xs font-medium hover:bg-solar-600 transition disabled:opacity-50">
-                              {saving ? '...' : 'Salvar'}
-                            </button>
-                            <button onClick={function () { setShowAdd(null); setForm({ percentual: '', data_vigencia: '' }) }}
-                              className="text-dark-400 hover:text-dark-600">
-                              <X size={16} />
-                            </button>
+                          <div className="flex flex-col gap-2">
+                            <div className="flex items-center gap-2">
+                              <input type="number" value={form.percentual}
+                                onChange={function (e) { setForm({ ...form, percentual: e.target.value }) }}
+                                placeholder="%" step="any"
+                                className="w-20 px-2 py-1.5 rounded border border-dark-300 text-sm text-center focus:outline-none focus:ring-2 focus:ring-solar-500/50" />
+                              <input type="date" value={form.data_vigencia}
+                                onChange={function (e) { setForm({ ...form, data_vigencia: e.target.value }) }}
+                                className="px-2 py-1.5 rounded border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" />
+                              <button onClick={function () { handleAdd(c.uc_id) }} disabled={saving}
+                                className="px-3 py-1.5 rounded-lg bg-solar-500 text-dark-900 text-xs font-medium hover:bg-solar-600 transition disabled:opacity-50">
+                                {saving ? '...' : 'Salvar'}
+                              </button>
+                              <button onClick={function () { setShowAdd(null); setForm({ percentual: '', data_vigencia: new Date().toISOString().split('T')[0] }); setArquivoProtocolo(null) }}
+                                className="text-dark-400 hover:text-dark-600">
+                                <X size={16} />
+                              </button>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <label className="flex items-center gap-1 px-3 py-1.5 rounded border border-dark-300 text-xs text-dark-600 cursor-pointer hover:bg-dark-50">
+                                Protocolo Energisa (PDF)
+                                <input type="file" className="hidden" accept=".pdf" onChange={function (e) { setArquivoProtocolo(e.target.files[0]) }} />
+                              </label>
+                              {arquivoProtocolo && <span className="text-xs text-solar-600">{arquivoProtocolo.name}</span>}
+                            </div>
                           </div>
                         ) : (
                           <button onClick={function () { setShowAdd(c.uc_id) }}
