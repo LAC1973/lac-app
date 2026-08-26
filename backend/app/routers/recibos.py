@@ -77,8 +77,7 @@ async def create_recibo(
     if existente.data:
         raise HTTPException(status_code=400, detail="Ja existe recibo para este cliente neste mes")
 
-    # Buscar faturas ja pagas do cliente no mes (recibo documenta pagamento ja recebido,
-    # nao marca fatura como paga sozinho - mesma regra do gerar-lote)
+   
         faturas = (
         sb.table("faturas")
         .select("id")
@@ -131,7 +130,7 @@ async def gerar_recibos_lote(
     """Gera recibos consolidados por titular para o mes.
 
     Um titular pode ter varias UCs cadastradas (varios registros de `cliente`,
-    um por UC). Agrupa as faturas pagas do mes por titular - mesmo CPF/CNPJ
+    um por UC). Agrupa as faturas do mes por titular - mesmo CPF/CNPJ
     (normalizado) dentro da mesma usina - e gera 1 recibo so por titular,
     cobrindo todas as UCs dele, no mesmo formato do recibo usado antes do
     sistema (varias UCs, 1 valor total, 1 economia).
@@ -142,7 +141,6 @@ async def gerar_recibos_lote(
         sb.table("faturas")
         .select("id, cliente_id, valor_final, kwh_injetado, clientes(cpf_cnpj, usina_id, item)")
         .eq("mes_referencia", mes_referencia)
-        .eq("status", "paga")
         .execute()
     )
     if not faturas_pagas.data:
