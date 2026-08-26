@@ -357,6 +357,7 @@ function UCsSection({ clienteId, usinas, canEdit, canDelete, onSaved }) {
   const [ucs, setUcs] = useState([])
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
+  const [editingUC, setEditingUC] = useState(null)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ usina_id: '', nome_uc: '', numero_uc: '', numero_uc_novo: '', poste: '', dia_leitura: '', item: '' })
 
@@ -405,7 +406,29 @@ function UCsSection({ clienteId, usinas, canEdit, canDelete, onSaved }) {
       alert('Erro ao excluir')
     }
   }
-
+  async function handleEditUC(e) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      var payload = {
+        usina_id: parseInt(editingUC.usina_id),
+        nome_uc: editingUC.nome_uc || null,
+        numero_uc: editingUC.numero_uc || null,
+        numero_uc_novo: editingUC.numero_uc_novo || null,
+        poste: editingUC.poste || null,
+        dia_leitura: editingUC.dia_leitura ? parseInt(editingUC.dia_leitura) : null,
+        item: editingUC.item ? parseInt(editingUC.item) : null,
+      }
+      await api.put('/clientes/ucs/' + editingUC.id, payload)
+      setEditingUC(null)
+      await loadUCs()
+      await onSaved()
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Erro ao editar UC')
+    } finally {
+      setSaving(false)
+    }
+  }
   return (
     <div className="mt-5">
       <div className="flex items-center justify-between mb-3">
@@ -461,7 +484,50 @@ function UCsSection({ clienteId, usinas, canEdit, canDelete, onSaved }) {
           </div>
         </form>
       )}
-
+      {editingUC && (
+        <form onSubmit={handleEditUC} className="mb-3 p-3 bg-solar-50 rounded-lg space-y-2">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold text-dark-700">Editando UC</span>
+            <button type="button" onClick={function () { setEditingUC(null) }} className="text-dark-400 hover:text-dark-600"><X size={14} /></button>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <select value={editingUC.usina_id} onChange={function (e) { setEditingUC({ ...editingUC, usina_id: e.target.value }) }}
+              className="px-3 py-2 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" required>
+              <option value="">Usina *</option>
+              {usinas.map(function (u) { return (<option key={u.id} value={u.id}>{u.nome}</option>) })}
+            </select>
+            <input type="text" value={editingUC.nome_uc || ''} onChange={function (e) { setEditingUC({ ...editingUC, nome_uc: e.target.value }) }}
+              placeholder="Nome da UC" className="px-3 py-2 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" />
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <input type="text" value={editingUC.numero_uc || ''} onChange={function (e) { setEditingUC({ ...editingUC, numero_uc: e.target.value }) }}
+              placeholder="Numero UC (antigo)" className="px-3 py-2 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" />
+            <input type="text" value={editingUC.numero_uc_novo || ''} onChange={function (e) { setEditingUC({ ...editingUC, numero_uc_novo: e.target.value }) }}
+              placeholder="Numero UC (novo)" className="px-3 py-2 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" />
+            <input type="text" value={editingUC.poste || ''} onChange={function (e) { setEditingUC({ ...editingUC, poste: e.target.value }) }}
+              placeholder="Poste" className="px-3 py-2 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <select value={editingUC.dia_leitura || ''} onChange={function (e) { setEditingUC({ ...editingUC, dia_leitura: e.target.value }) }}
+              className="px-3 py-2 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50">
+              <option value="">Dia Leitura</option>
+              {Array.from({ length: 30 }, function (_, i) { return i + 1 }).map(function (d) {
+                return (<option key={d} value={d}>Dia {d}</option>)
+              })}
+            </select>
+            <input type="number" value={editingUC.item || ''} onChange={function (e) { setEditingUC({ ...editingUC, item: e.target.value }) }}
+              placeholder="Item" className="px-3 py-2 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" />
+          </div>
+          <div className="flex gap-2">
+            <button type="submit" disabled={saving}
+              className="px-4 py-1.5 rounded-lg bg-solar-500 text-dark-900 text-sm font-medium hover:bg-solar-600 transition disabled:opacity-50">
+              {saving ? '...' : 'Salvar'}
+            </button>
+            <button type="button" onClick={function () { setEditingUC(null) }}
+              className="px-4 py-1.5 rounded-lg border border-dark-300 text-sm text-dark-600">Cancelar</button>
+          </div>
+        </form>
+      )}
       {loading ? (
         <p className="text-sm text-dark-400">Carregando...</p>
       ) : ucs.length === 0 ? (
@@ -485,12 +551,20 @@ function UCsSection({ clienteId, usinas, canEdit, canDelete, onSaved }) {
                     {uc.item && <span className="text-xs text-dark-400">Item {uc.item}</span>}
                   </div>
                 </div>
-                {canDelete && (
-                  <button onClick={function () { handleDeleteUC(uc.id) }}
-                    className="p-1.5 rounded text-dark-400 hover:text-red-500 transition">
-                    <Trash2 size={14} />
-                  </button>
-                )}
+                <div className="flex items-center gap-1">
+                  {canEdit && (
+                    <button onClick={function () { setEditingUC(uc) }}
+                      className="p-1.5 rounded text-dark-400 hover:text-solar-600 transition">
+                      <Pencil size={14} />
+                    </button>
+                  )}
+                  {canDelete && (
+                    <button onClick={function () { handleDeleteUC(uc.id) }}
+                      className="p-1.5 rounded text-dark-400 hover:text-red-500 transition">
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
               </div>
             )
           })}

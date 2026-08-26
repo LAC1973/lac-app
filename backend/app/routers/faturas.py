@@ -220,6 +220,37 @@ async def update_status(
     sb.table("faturas").update({"status": status}).eq("id", fatura_id).execute()
     return {"message": f"Status atualizado para '{status}'"}
 
+@router.get("/ultima-leitura")
+async def get_ultima_leitura(
+    cliente_uc_id: int = Query(...),
+    mes_referencia: str = Query(...),
+    user: dict = Depends(require_permission("faturas", "visualizar")),
+):
+    """Retorna a leitura final do mes anterior pra esta UC."""
+    sb = get_supabase_admin()
+    
+    # Calcular mes anterior
+    ano = int(mes_referencia.split("-")[0])
+    mes = int(mes_referencia.split("-")[1])
+    mes -= 1
+    if mes <= 0:
+        mes = 12
+        ano -= 1
+    mes_anterior = str(ano) + "-" + str(mes).zfill(2) + "-01"
+    
+    fatura = (
+        sb.table("faturas")
+        .select("leitura_final")
+        .eq("cliente_uc_id", cliente_uc_id)
+        .eq("mes_referencia", mes_anterior)
+        .limit(1)
+        .execute()
+    )
+    
+    if fatura.data and fatura.data[0].get("leitura_final"):
+        return {"leitura_inicial": fatura.data[0]["leitura_final"]}
+    
+    return {"leitura_inicial": None}
 
 @router.delete("/{fatura_id}")
 async def delete_fatura(

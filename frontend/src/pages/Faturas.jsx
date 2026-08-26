@@ -553,6 +553,17 @@ function NovaFaturaModal({ clientes, mesRef, onClose, onSaved }) {
       setUcsCliente([])
     }
   }, [form.cliente_id])
+  useEffect(() => {
+    if (form.cliente_uc_id && form.mes_referencia) {
+      api.get('/faturas/ultima-leitura?cliente_uc_id=' + form.cliente_uc_id + '&mes_referencia=' + form.mes_referencia)
+        .then(({ data }) => {
+          if (data.leitura_inicial != null) {
+            setForm((prev) => ({ ...prev, leitura_inicial: String(data.leitura_inicial) }))
+          }
+        })
+        .catch(() => { })
+    }
+  }, [form.cliente_uc_id, form.mes_referencia])
   const valorKwh = clienteSelecionado?.valor_kwh || 0.75
 
   const consumo = (form.leitura_inicial && form.leitura_final)
