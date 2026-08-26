@@ -30,6 +30,7 @@ async def extrair_fatura_energisa(
     pdf.close()
 
     resultado = {
+        "leitura_anterior": None,
         "leitura_atual": None,
         "consumo_kwh": None,
         "energia_injetada": None,
@@ -45,6 +46,7 @@ async def extrair_fatura_energisa(
     # Leitura Atual - busca na tabela do medidor (segundo numero apos o anterior)
     medidor_match = re.search(r'Ponta\s+(\d[\d.]*)\s+(\d[\d.]*)\s+\d+\s+(\d[\d.]*)', texto_completo)
     if medidor_match:
+        resultado["leitura_anterior"] = float(medidor_match.group(1).replace('.', ''))
         resultado["leitura_atual"] = float(medidor_match.group(2).replace('.', ''))
         resultado["consumo_kwh"] = float(medidor_match.group(3).replace('.', ''))
 

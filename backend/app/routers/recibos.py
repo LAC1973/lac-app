@@ -79,19 +79,21 @@ async def create_recibo(
 
     # Buscar faturas ja pagas do cliente no mes (recibo documenta pagamento ja recebido,
     # nao marca fatura como paga sozinho - mesma regra do gerar-lote)
-    faturas = (
+        faturas = (
         sb.table("faturas")
         .select("id")
         .eq("cliente_id", req.cliente_id)
         .eq("mes_referencia", str(req.mes_referencia))
-        .eq("status", "paga")
         .execute()
     )
     if not faturas.data:
         raise HTTPException(
             status_code=400,
-            detail="Marque as faturas como pagas antes de gerar o recibo",
+            detail="Cadastre as faturas do mes antes de gerar o recibo",
         )
+    # Marcar faturas como enviada
+    for f in faturas.data:
+        sb.table("faturas").update({"status": "enviada"}).eq("id", f["id"]).execute()
 
     # Calcular economia
     tarifa = _get_tarifa_energisa(sb)

@@ -519,6 +519,7 @@ function NovaFaturaModal({ clientes, mesRef, onClose, onSaved }) {
       })
       setForm((prev) => ({
         ...prev,
+        leitura_inicial: data.leitura_anterior || prev.leitura_inicial,
         leitura_final: data.leitura_atual || prev.leitura_final,
         kwh_injetado: data.energia_injetada || prev.kwh_injetado,
         saldo_kwh: data.saldo_acumulado || prev.saldo_kwh,

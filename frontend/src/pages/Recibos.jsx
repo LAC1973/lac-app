@@ -148,10 +148,10 @@ export default function Recibos() {
               </button>
             </div>
             <p className="text-sm text-dark-600 mb-4">
-              Gerar recibos para todos os clientes com faturas <strong>pagas</strong> em {NOMES_MES[mesAtual]} {anoAtual}?
+              Gerar recibos para todos os clientes com faturas cadastradas em {NOMES_MES[mesAtual]} {anoAtual}?
             </p>
             <p className="text-xs text-dark-400 mb-4">
-              Apenas clientes com faturas marcadas como "Paga" terao recibos gerados.
+              Recibos serao gerados para todos os clientes com faturas cadastradas no mes.
               Recibos ja existentes serao ignorados.
             </p>
             <div className="flex gap-3">
@@ -180,7 +180,7 @@ export default function Recibos() {
         <div className="bg-white rounded-xl border border-dark-200 p-12 text-center shadow-sm">
           <Receipt size={48} className="mx-auto mb-4 text-dark-300" />
           <p className="text-dark-500">Nenhum recibo neste mes</p>
-          <p className="text-sm text-dark-400 mt-1">Marque faturas como "Paga" e clique em "Gerar Recibos"</p>
+          <p className="text-sm text-dark-400 mt-1">Cadastre as faturas e clique em "Gerar Recibos do Mes"</p>
         </div>
       ) : (
         <div className="space-y-3">
