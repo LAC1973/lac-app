@@ -117,8 +117,20 @@ async def create_percentual(
     data = req.model_dump()
     data["data_vigencia"] = str(data["data_vigencia"])
     # Suporta tanto cliente_uc_id quanto cliente_id
-    if "cliente_uc_id" not in data or not data["cliente_uc_id"]:
+    if not data.get("cliente_uc_id"):
         data["cliente_uc_id"] = data.get("cliente_id")
+    # cliente_id e obrigatorio na tabela: resolve pelo titular da UC
+    if not data.get("cliente_id"):
+        uc = (
+            sb.table("clientes_ucs")
+            .select("cliente_id")
+            .eq("id", data["cliente_uc_id"])
+            .single()
+            .execute()
+        )
+        if not uc.data:
+            raise HTTPException(status_code=404, detail="UC nao encontrada")
+        data["cliente_id"] = uc.data["cliente_id"]
     result = sb.table("percentuais").insert(data).execute()
     return result.data[0]
 

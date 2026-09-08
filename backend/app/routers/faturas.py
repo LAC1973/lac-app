@@ -18,8 +18,7 @@ async def list_faturas(
     """Lista faturas com filtros opcionais."""
     sb = get_supabase_admin()
     # !inner necessario pra poder filtrar pela coluna usina_id da tabela embutida
-    query = sb.table("faturas").select("*, clientes(nome, celular, valor_kwh, usinas(nome)), clientes_ucs(nome_uc, numero_uc, usina_id, usinas(nome))")
-
+    query = sb.table("faturas").select("*, clientes(nome, celular, valor_kwh, usinas(nome)), clientes_ucs!inner(nome_uc, numero_uc, usina_id, usinas(nome))")
     if mes_referencia:
         query = query.eq("mes_referencia", mes_referencia)
     if cliente_id:
@@ -27,7 +26,7 @@ async def list_faturas(
     if status:
         query = query.eq("status", status)
     if usina_id:
-        query = query.eq("clientes.usina_id", usina_id)
+        query = query.eq("clientes_ucs.usina_id", usina_id)
 
     result = query.order("created_at", desc=True).limit(2000).execute()
 
