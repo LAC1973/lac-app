@@ -15,30 +15,32 @@ async def list_percentuais_usina(
     """Lista os percentuais vigentes de todas as UCs de uma usina."""
     sb = get_supabase_admin()
 
-    ucs = (
-        sb.table("clientes_ucs")
-        .select("*, clientes(nome, cpf_cnpj)")
+    # Parte dos percentuais da usina, não das UCs dela: uma UC pode ser
+    # compensada por uma usina diferente da que está no seu cadastro.
+    percs = (
+        sb.table("percentuais")
+        .select("*, clientes_ucs(*, clientes(nome, cpf_cnpj))")
         .eq("usina_id", usina_id)
-        .eq("activo", True)
-        .order("item")
+        .order("data_vigencia", desc=True)
         .execute()
     )
+
+    vigentes = {}
+    for p in percs.data or []:
+        uc = p.get("clientes_ucs")
+        if not uc or not uc.get("activo"):
+            continue
+        # veio ordenado por data desc, então o primeiro de cada UC é o vigente
+        vigentes.setdefault(p["cliente_uc_id"], p)
 
     resultado = []
     soma = 0
 
-    for uc in ucs.data or []:
-        perm = (
-            sb.table("percentuais")
-            .select("*")
-            .eq("cliente_uc_id", uc["id"])
-            .eq("usina_id", usina_id)
-            .order("data_vigencia", desc=True)
-            .limit(1)
-            .execute()
-        )
-        percentual_vigente = perm.data[0] if perm.data else None
-        valor = percentual_vigente["percentual"] if percentual_vigente else 0
+    for percentual_vigente in sorted(
+        vigentes.values(), key=lambda p: p["clientes_ucs"].get("item") or 0
+    ):
+        uc = percentual_vigente["clientes_ucs"]
+        valor = percentual_vigente["percentual"]
         soma += valor
 
         resultado.append({
