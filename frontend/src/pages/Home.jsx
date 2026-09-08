@@ -32,12 +32,14 @@ export default function Home() {
   const alertas = dados
     ? (dados.usinas_sem_producao?.length || 0) + (dados.percentuais_incompletos?.length || 0)
     : 0
-
+  const hora = new Date().getHours()
+  const saudacao =
+    hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite'
   return (
     <div>
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-dark-900">
-          Bom dia, {profile?.full_name?.split(' ')[0]}
+          {saudacao}, {profile?.full_name?.split(' ')[0]}
         </h1>
         <p className="text-dark-500 mt-1">Visão geral das usinas solares</p>
       </div>
