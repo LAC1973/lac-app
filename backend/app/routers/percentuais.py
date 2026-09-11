@@ -84,31 +84,25 @@ async def create_percentual(
     """Define um novo percentual para uma UC. Nao exclui os antigos (historico)."""
     sb = get_supabase_admin()
 
-    # Verificar se a soma vai ultrapassar 100%
-    ucs = (
-        sb.table("clientes_ucs")
-        .select("id")
+    # Verificar se a soma vai ultrapassar 100%.
+    # Soma os percentuais VIGENTES da usina, um por UC, exceto o da UC que está
+    # sendo definida agora. Parte dos percentuais da usina (não das UCs
+    # cadastradas nela), porque uma UC pode ser compensada por outra usina.
+    uc_atual = req.cliente_uc_id or req.cliente_id
+
+    percs = (
+        sb.table("percentuais")
+        .select("cliente_uc_id, percentual, data_vigencia")
         .eq("usina_id", req.usina_id)
-        .eq("activo", True)
+        .order("data_vigencia", desc=True)
         .execute()
     )
 
-    soma = 0
-    for uc in ucs.data or []:
-        uc_id = req.cliente_uc_id if hasattr(req, 'cliente_uc_id') else req.cliente_id
-        if uc["id"] == uc_id:
-            continue
-        perm = (
-            sb.table("percentuais")
-            .select("percentual")
-            .eq("cliente_uc_id", uc["id"])
-            .eq("usina_id", req.usina_id)
-            .order("data_vigencia", desc=True)
-            .limit(1)
-            .execute()
-        )
-        if perm.data:
-            soma += perm.data[0]["percentual"]
+    vigente_por_uc = {}
+    for p in percs.data or []:
+        vigente_por_uc.setdefault(p["cliente_uc_id"], p["percentual"])
+
+    soma = sum(v for uc_id, v in vigente_por_uc.items() if uc_id != uc_atual)
 
     if soma + req.percentual > 100.01:
         raise HTTPException(
