@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import api from '@/lib/api'
-import { cn, formatCurrency, formatDate } from '@/lib/utils'
+import { cn, formatCurrency, formatDate, whatsappUrl } from '@/lib/utils'
 import { NOMES_MES } from '@/lib/meses'
 import MonthPicker from '@/components/MonthPicker'
 import {
   Plus, FileText, Pencil, Trash2, X, Search,
   CircleDot, Download, ClipboardList, Upload,
+  ChevronRight, ChevronDown, MessageCircle, CheckCircle2,
 } from 'lucide-react'
 
 const STATUS_CONFIG = {
@@ -18,11 +19,13 @@ const STATUS_CONFIG = {
 
 export default function Faturas() {
   const { hasPermission } = useAuth()
-  const [faturas, setFaturas] = useState([])
+  const [grupos, setGrupos] = useState([])
   const [usinas, setUsinas] = useState([])
   const [loading, setLoading] = useState(true)
   const [filtroUsina, setFiltroUsina] = useState('')
   const [filtroStatus, setFiltroStatus] = useState('')
+  const [busca, setBusca] = useState('')
+  const [expandido, setExpandido] = useState({})
   const [mesRef, setMesRef] = useState(() => {
     const d = new Date()
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-01'
@@ -64,11 +67,11 @@ export default function Faturas() {
   async function loadFaturas() {
     setLoading(true)
     try {
-      var url = '/faturas/?mes_referencia=' + mesRef
+      var url = '/faturas/agrupadas?mes_referencia=' + mesRef
       if (filtroUsina) url += '&usina_id=' + filtroUsina
       if (filtroStatus) url += '&status=' + filtroStatus
       const { data } = await api.get(url)
-      setFaturas(data)
+      setGrupos(data)
     } catch (err) {
       console.error('Erro:', err)
     } finally {
@@ -76,12 +79,23 @@ export default function Faturas() {
     }
   }
 
-  async function handleStatusChange(faturaId, novoStatus) {
+  async function handleStatusCliente(clienteId, novoStatus) {
     try {
-      await api.put('/faturas/' + faturaId + '/status?status=' + novoStatus)
+      await api.put('/faturas/cliente/' + clienteId + '/status?mes_referencia=' + mesRef + '&status=' + novoStatus)
       await loadFaturas()
     } catch (err) {
       alert(err.response?.data?.detail || 'Erro')
+    }
+  }
+
+  async function abrirEdicao(faturaId) {
+    try {
+      const { data } = await api.get('/faturas/?mes_referencia=' + mesRef)
+      const completa = (data || []).find(f => f.id === faturaId)
+      if (completa) setEditingFatura(completa)
+      else alert('Fatura nao encontrada')
+    } catch (err) {
+      alert('Erro ao abrir fatura')
     }
   }
 
@@ -95,6 +109,24 @@ export default function Faturas() {
     }
   }
 
+  function handleWhatsApp(grupo) {
+    if (!grupo.cliente_celular) {
+      alert('Cliente sem numero de celular cadastrado')
+      return
+    }
+    const mesNome = NOMES_MES[parseInt(mesRef.split('-')[1]) - 1]
+    const linhas = grupo.ucs.map(u =>
+      '- ' + (u.nome_uc || u.numero_uc) + ': ' + formatCurrency(u.valor_final)).join('\n')
+    const mensagem =
+      'Ola ' + grupo.cliente_nome + '! Segue sua fatura de ' + mesNome + ':\n\n' +
+      linhas + '\n\nTotal: ' + formatCurrency(grupo.valor_total)
+    window.open(whatsappUrl(grupo.cliente_celular, mensagem), '_blank')
+  }
+
+  function toggle(clienteId) {
+    setExpandido(prev => ({ ...prev, [clienteId]: !prev[clienteId] }))
+  }
+
   function changeMes(offset) {
     const d = new Date(mesRef + 'T12:00:00')
     d.setMonth(d.getMonth() + offset)
@@ -104,16 +136,20 @@ export default function Faturas() {
   const mesAtual = parseInt(mesRef.split('-')[1])
   const anoAtual = parseInt(mesRef.split('-')[0])
 
-  const totalFaturas = faturas.reduce((sum, f) => sum + (f.valor_final || 0), 0)
-  const totalPagas = faturas.filter(f => f.status === 'paga').reduce((sum, f) => sum + (f.valor_final || 0), 0)
-  const totalPendentes = faturas.filter(f => f.status !== 'paga').reduce((sum, f) => sum + (f.valor_final || 0), 0)
+  const gruposFiltrados = busca
+    ? grupos.filter(g => (g.cliente_nome || '').toLowerCase().includes(busca.toLowerCase()))
+    : grupos
+
+  const totalFaturas = grupos.reduce((sum, g) => sum + (g.valor_total || 0), 0)
+  const totalPagas = grupos.filter(g => g.status === 'paga').reduce((sum, g) => sum + (g.valor_total || 0), 0)
+  const totalPendentes = grupos.filter(g => g.status !== 'paga').reduce((sum, g) => sum + (g.valor_total || 0), 0)
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Faturas</h1>
-          <p className="text-dark-500 text-sm mt-1">Gerencie as faturas mensais dos clientes</p>
+          <p className="text-dark-500 text-sm mt-1">Uma fatura por cliente, somando as UCs do mes</p>
         </div>
         {canCreate && (
           <button
@@ -143,7 +179,12 @@ export default function Faturas() {
         </div>
       </div>
 
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <div className="relative">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-400" />
+          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar cliente..."
+            className="pl-9 pr-4 py-2 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" />
+        </div>
         <select value={filtroUsina} onChange={(e) => setFiltroUsina(e.target.value)}
           className="px-4 py-2 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50">
           <option value="">Todas as usinas</option>
@@ -197,7 +238,7 @@ export default function Faturas() {
 
       {loading ? (
         <div className="text-center py-12 text-dark-400">Carregando...</div>
-      ) : faturas.length === 0 ? (
+      ) : gruposFiltrados.length === 0 ? (
         <div className="bg-white rounded-xl border border-dark-200 p-12 text-center shadow-sm">
           <FileText size={48} className="mx-auto mb-4 text-dark-300" />
           <p className="text-dark-500">Nenhuma fatura neste mes</p>
@@ -208,55 +249,76 @@ export default function Faturas() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-dark-200 bg-dark-50">
+                <th className="text-left py-3 px-4 font-medium text-dark-600 w-8"></th>
                 <th className="text-left py-3 px-4 font-medium text-dark-600">Cliente</th>
-                <th className="text-left py-3 px-4 font-medium text-dark-600">Usina</th>
+                <th className="text-center py-3 px-4 font-medium text-dark-600">UCs</th>
                 <th className="text-right py-3 px-4 font-medium text-dark-600">kWh Injetado</th>
-                <th className="text-right py-3 px-4 font-medium text-dark-600">Valor kWh</th>
-                <th className="text-right py-3 px-4 font-medium text-dark-600">Valor Final</th>
-                <th className="text-center py-3 px-4 font-medium text-dark-600">Vencimento</th>
+                <th className="text-right py-3 px-4 font-medium text-dark-600">Valor Total</th>
                 <th className="text-center py-3 px-4 font-medium text-dark-600">Status</th>
                 <th className="text-center py-3 px-4 font-medium text-dark-600">Acoes</th>
               </tr>
             </thead>
             <tbody>
-              {faturas.map((fatura) => {
-                const st = STATUS_CONFIG[fatura.status] || STATUS_CONFIG.pendente
-                const clienteNome = fatura.clientes?.nome || '-'
-                const ucNome = fatura.clientes_ucs?.nome_uc || ''
-                const usinaNome = fatura.clientes_ucs?.usinas?.nome || fatura.clientes?.usinas?.nome || '-'
+              {gruposFiltrados.map((grupo) => {
+                const st = STATUS_CONFIG[grupo.status] || STATUS_CONFIG.pendente
+                const aberto = !!expandido[grupo.cliente_id]
                 return (
-                  <tr key={fatura.id} className="border-b border-dark-100 hover:bg-dark-50">
-                    <td className="py-3 px-4">
-                      <p className="font-medium text-dark-900">{clienteNome}</p>
-                      {ucNome && <p className="text-xs text-dark-500">{ucNome}</p>}
-                    </td>
-                    <td className="py-3 px-4 text-dark-600">{usinaNome}</td>
-                    <td className="py-3 px-4 text-right text-dark-700">{fatura.kwh_injetado?.toFixed(1) || '-'}</td>
-                    <td className="py-3 px-4 text-right text-dark-700">{formatCurrency(fatura.valor_kwh_aplicado)}</td>
-                    <td className="py-3 px-4 text-right font-semibold text-dark-900">{formatCurrency(fatura.valor_final)}</td>
-                    <td className="py-3 px-4 text-center text-dark-600">
-                      {fatura.data_vencimento ? new Date(fatura.data_vencimento + 'T12:00:00').toLocaleDateString('pt-BR') : '-'}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      {canEdit ? (
-                        <select value={fatura.status} onChange={(e) => handleStatusChange(fatura.id, e.target.value)}
-                          className={cn('text-xs font-medium px-2 py-1 rounded-full border-0 cursor-pointer', st.bg, st.text)}>
-                          <option value="pendente">Pendente</option>
-                          <option value="enviada">Enviada</option>
-                          <option value="paga">Paga</option>
-                          <option value="atrasada">Atrasada</option>
-                        </select>
-                      ) : (
-                        <span className={cn('text-xs font-medium px-2 py-1 rounded-full', st.bg, st.text)}>{st.label}</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        {canEdit && (<button onClick={() => setEditingFatura(fatura)} className="p-1.5 rounded text-dark-400 hover:text-solar-600 transition"><Pencil size={15} /></button>)}
-                        {canDelete && (<button onClick={() => handleDelete(fatura.id)} className="p-1.5 rounded text-dark-400 hover:text-red-500 transition"><Trash2 size={15} /></button>)}
-                      </div>
-                    </td>
-                  </tr>
+                  <>
+                    <tr key={'c' + grupo.cliente_id} className="border-b border-dark-100 hover:bg-dark-50 cursor-pointer"
+                      onClick={() => toggle(grupo.cliente_id)}>
+                      <td className="py-3 px-4 text-dark-400">
+                        {aberto ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                      </td>
+                      <td className="py-3 px-4">
+                        <p className="font-medium text-dark-900">{grupo.cliente_nome || '-'}</p>
+                      </td>
+                      <td className="py-3 px-4 text-center text-dark-600">{grupo.qtd_ucs}</td>
+                      <td className="py-3 px-4 text-right text-dark-700">{grupo.kwh_injetado_total?.toFixed(1) || '-'}</td>
+                      <td className="py-3 px-4 text-right font-semibold text-dark-900">{formatCurrency(grupo.valor_total)}</td>
+                      <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
+                        {canEdit ? (
+                          <select value={grupo.status} onChange={(e) => handleStatusCliente(grupo.cliente_id, e.target.value)}
+                            className={cn('text-xs font-medium px-2 py-1 rounded-full border-0 cursor-pointer', st.bg, st.text)}>
+                            <option value="pendente">Pendente</option>
+                            <option value="paga">Paga</option>
+                          </select>
+                        ) : (
+                          <span className={cn('text-xs font-medium px-2 py-1 rounded-full', st.bg, st.text)}>{st.label}</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-center gap-1">
+                          <button onClick={() => handleWhatsApp(grupo)} title="Enviar WhatsApp"
+                            className="p-1.5 rounded text-dark-400 hover:text-green-600 transition"><MessageCircle size={15} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                    {aberto && grupo.ucs.map((uc) => (
+                      <tr key={'uc' + uc.fatura_id} className="border-b border-dark-100 bg-dark-50/50">
+                        <td></td>
+                        <td className="py-2 px-4 pl-8">
+                          <p className="text-dark-700">{uc.nome_uc || uc.numero_uc}</p>
+                          <p className="text-xs text-dark-400">{uc.numero_uc}</p>
+                        </td>
+                        <td className="py-2 px-4 text-center text-xs text-dark-500">{uc.usina_nome}</td>
+                        <td className="py-2 px-4 text-right text-dark-600">{uc.kwh_injetado?.toFixed(1) || '-'}</td>
+                        <td className="py-2 px-4 text-right text-dark-700">{formatCurrency(uc.valor_final)}</td>
+                        <td className="py-2 px-4 text-center">
+                          <span className={cn('text-xs px-2 py-0.5 rounded-full',
+                            (STATUS_CONFIG[uc.status] || STATUS_CONFIG.pendente).bg,
+                            (STATUS_CONFIG[uc.status] || STATUS_CONFIG.pendente).text)}>
+                            {(STATUS_CONFIG[uc.status] || STATUS_CONFIG.pendente).label}
+                          </span>
+                        </td>
+                        <td className="py-2 px-4 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            {canEdit && (<button onClick={() => abrirEdicao(uc.fatura_id)} className="p-1.5 rounded text-dark-400 hover:text-solar-600 transition"><Pencil size={14} /></button>)}
+                            {canDelete && (<button onClick={() => handleDelete(uc.fatura_id)} className="p-1.5 rounded text-dark-400 hover:text-red-500 transition"><Trash2 size={14} /></button>)}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </>
                 )
               })}
             </tbody>
