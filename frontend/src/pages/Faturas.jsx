@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import api from '@/lib/api'
 import { cn, formatCurrency, formatDate, whatsappUrl } from '@/lib/utils'
@@ -263,8 +263,8 @@ export default function Faturas() {
                 const st = STATUS_CONFIG[grupo.status] || STATUS_CONFIG.pendente
                 const aberto = !!expandido[grupo.cliente_id]
                 return (
-                  <>
-                    <tr key={'c' + grupo.cliente_id} className="border-b border-dark-100 hover:bg-dark-50 cursor-pointer"
+                  <Fragment key={grupo.cliente_id}>
+                    <tr className="border-b border-dark-100 hover:bg-dark-50 cursor-pointer"
                       onClick={() => toggle(grupo.cliente_id)}>
                       <td className="py-3 px-4 text-dark-400">
                         {aberto ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
@@ -318,7 +318,7 @@ export default function Faturas() {
                         </td>
                       </tr>
                     ))}
-                  </>
+                  </Fragment>
                 )
               })}
             </tbody>
@@ -566,8 +566,47 @@ function LeiturasModal({ usinaId, mesRef, onClose, onSaved }) {
 }
 
 function NovaFaturaModal({ clientes, mesRef, onClose, onSaved }) {
+  const [clienteId, setClienteId] = useState('')
+  const [mesReferencia, setMesReferencia] = useState(mesRef)
+  const [ucsCliente, setUcsCliente] = useState([])
+  const [ucAtiva, setUcAtiva] = useState(null)        // id da UC sendo preenchida
+  const [salvas, setSalvas] = useState({})            // { uc_id: true } já salvas nesta sessão
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+
+  const clienteSelecionado = clientes.find((c) => c.id === parseInt(clienteId))
+  const valorKwh = clienteSelecionado?.valor_kwh || 0.75
+
+  const [form, setForm] = useState({
+    leitura_inicial: '', leitura_final: '',
+    kwh_injetado: '', saldo_kwh: '', desconto_sazonal: 0,
+  })
+
+  // ao trocar de cliente, carrega as UCs e zera a seleção
+  useEffect(() => {
+    if (clienteId) {
+      api.get('/clientes/' + clienteId + '/ucs')
+        .then(({ data }) => setUcsCliente(data))
+        .catch(() => setUcsCliente([]))
+      setUcAtiva(null)
+      setSalvas({})
+    } else {
+      setUcsCliente([])
+    }
+  }, [clienteId])
+
+  // ao escolher uma UC, limpa o form e puxa a leitura inicial do mês anterior
+  useEffect(() => {
+    if (!ucAtiva) return
+    setForm({ leitura_inicial: '', leitura_final: '', kwh_injetado: '', saldo_kwh: '', desconto_sazonal: 0 })
+    api.get('/faturas/ultima-leitura?cliente_uc_id=' + ucAtiva + '&mes_referencia=' + mesReferencia)
+      .then(({ data }) => {
+        if (data.leitura_inicial != null) {
+          setForm((prev) => ({ ...prev, leitura_inicial: String(data.leitura_inicial) }))
+        }
+      })
+      .catch(() => { })
+  }, [ucAtiva, mesReferencia])
 
   async function handleUploadEnergisa(e) {
     const file = e.target.files[0]
@@ -586,7 +625,7 @@ function NovaFaturaModal({ clientes, mesRef, onClose, onSaved }) {
         kwh_injetado: data.energia_injetada || prev.kwh_injetado,
         saldo_kwh: data.saldo_acumulado || prev.saldo_kwh,
       }))
-      alert('Dados extraidos: Leitura ' + (data.leitura_atual || '-') + ', Consumo ' + (data.consumo_kwh || '-') + ', Injetada ' + (data.energia_injetada || '-') + ', Saldo ' + (data.saldo_acumulado || '-'))
+      alert('Dados extraidos: Leitura ' + (data.leitura_atual || '-') + ', Injetada ' + (data.energia_injetada || '-') + ', Saldo ' + (data.saldo_acumulado || '-'))
     } catch (err) {
       alert(err.response?.data?.detail || 'Erro ao extrair dados do PDF')
     } finally {
@@ -594,69 +633,37 @@ function NovaFaturaModal({ clientes, mesRef, onClose, onSaved }) {
       e.target.value = ''
     }
   }
-  const [form, setForm] = useState({
-    cliente_id: '',
-    cliente_uc_id: '',
-    mes_referencia: mesRef,
-    leitura_inicial: '',
-    leitura_final: '',
-    kwh_injetado: '',
-    saldo_kwh: '',
-    desconto_sazonal: 0,
-  })
-
-  const [ucsCliente, setUcsCliente] = useState([])
-
-  const clienteSelecionado = clientes.find((c) => c.id === parseInt(form.cliente_id))
-
-  useEffect(() => {
-    if (form.cliente_id) {
-      api.get('/clientes/' + form.cliente_id + '/ucs').then(({ data }) => setUcsCliente(data)).catch(() => setUcsCliente([]))
-    } else {
-      setUcsCliente([])
-    }
-  }, [form.cliente_id])
-  useEffect(() => {
-    if (form.cliente_uc_id && form.mes_referencia) {
-      api.get('/faturas/ultima-leitura?cliente_uc_id=' + form.cliente_uc_id + '&mes_referencia=' + form.mes_referencia)
-        .then(({ data }) => {
-          if (data.leitura_inicial != null) {
-            setForm((prev) => ({ ...prev, leitura_inicial: String(data.leitura_inicial) }))
-          }
-        })
-        .catch(() => { })
-    }
-  }, [form.cliente_uc_id, form.mes_referencia])
-  const valorKwh = clienteSelecionado?.valor_kwh || 0.75
-
-  const consumo = (form.leitura_inicial && form.leitura_final)
-    ? (parseFloat(form.leitura_final) - parseFloat(form.leitura_inicial)).toFixed(0) : ''
-
-  const valorTotal = form.kwh_injetado
-    ? (parseFloat(form.kwh_injetado) * valorKwh).toFixed(2) : ''
-
-  const valorFinal = valorTotal
-    ? (parseFloat(valorTotal) - (parseFloat(form.desconto_sazonal) || 0)).toFixed(2) : ''
 
   function handleChange(field, value) {
     setForm({ ...form, [field]: value })
   }
 
-  async function handleSubmit(e) {
-    e.preventDefault()
+  const consumo = (form.leitura_inicial && form.leitura_final)
+    ? (parseFloat(form.leitura_final) - parseFloat(form.leitura_inicial)).toFixed(0) : ''
+  const valorTotal = form.kwh_injetado
+    ? (parseFloat(form.kwh_injetado) * valorKwh).toFixed(2) : ''
+  const valorFinal = valorTotal
+    ? (parseFloat(valorTotal) - (parseFloat(form.desconto_sazonal) || 0)).toFixed(2) : ''
+
+  const ucObj = ucsCliente.find((u) => u.id === ucAtiva)
+  const totalUcs = ucsCliente.length
+  const totalSalvas = Object.keys(salvas).length
+
+  async function salvarUc(irProxima) {
+    if (!ucAtiva) { alert('Selecione uma UC'); return }
     if (!form.kwh_injetado) { alert('kWh Injetado e obrigatorio'); return }
-    if (!form.saldo_kwh && form.saldo_kwh !== 0) { alert('Saldo Acumulado e obrigatorio'); return }
+    if (!form.saldo_kwh && form.saldo_kwh !== 0 && form.saldo_kwh !== '0') { alert('Saldo Acumulado e obrigatorio'); return }
 
     setSaving(true)
     const diaVenc = clienteSelecionado?.dia_vencimento || 5
-    const ano = form.mes_referencia.split('-')[0]
-    const mes = form.mes_referencia.split('-')[1]
+    const ano = mesReferencia.split('-')[0]
+    const mes = mesReferencia.split('-')[1]
     const dataVencimento = ano + '-' + mes + '-' + String(diaVenc).padStart(2, '0')
 
     const payload = {
-      cliente_id: parseInt(form.cliente_id),
-      cliente_uc_id: form.cliente_uc_id ? parseInt(form.cliente_uc_id) : null,
-      mes_referencia: form.mes_referencia,
+      cliente_id: parseInt(clienteId),
+      cliente_uc_id: ucAtiva,
+      mes_referencia: mesReferencia,
       leitura_inicial: form.leitura_inicial ? parseFloat(form.leitura_inicial) : null,
       leitura_final: form.leitura_final ? parseFloat(form.leitura_final) : null,
       consumo_kwh: consumo ? parseFloat(consumo) : null,
@@ -671,8 +678,17 @@ function NovaFaturaModal({ clientes, mesRef, onClose, onSaved }) {
 
     try {
       await api.post('/faturas/', payload)
-      onClose()
+      const novasSalvas = { ...salvas, [ucAtiva]: true }
+      setSalvas(novasSalvas)
       await onSaved()
+
+      if (irProxima) {
+        // vai pra próxima UC ainda não salva
+        const proxima = ucsCliente.find((u) => !novasSalvas[u.id])
+        setUcAtiva(proxima ? proxima.id : null)
+      } else {
+        setUcAtiva(null)
+      }
     } catch (err) {
       alert(err.response?.data?.detail || 'Erro ao cadastrar fatura')
     } finally {
@@ -681,112 +697,120 @@ function NovaFaturaModal({ clientes, mesRef, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl w-full max-w-md p-6 my-4">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-bold">Nova Fatura</h2>
           <button onClick={onClose} className="text-dark-400 hover:text-dark-600"><X size={20} /></button>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
+
+        <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-dark-600 mb-1">Cliente *</label>
-            <select value={form.cliente_id} onChange={(e) => handleChange('cliente_id', e.target.value)}
-              className="w-full px-4 py-2.5 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" required>
+            <label className="block text-sm font-medium text-dark-600 mb-1.5">Cliente</label>
+            <select value={clienteId} onChange={(e) => setClienteId(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50">
               <option value="">Selecione o cliente</option>
               {clientes.filter((c) => c.activo).map((c) => (
-                <option key={c.id} value={c.id}>{c.nome} - {c.usinas?.nome || ''} ({formatCurrency(c.valor_kwh)}/kWh)</option>
+                <option key={c.id} value={c.id}>{c.nome} ({formatCurrency(c.valor_kwh)}/kWh)</option>
               ))}
             </select>
           </div>
-          {ucsCliente.length > 0 && (
+
+          <div>
+            <label className="block text-sm font-medium text-dark-600 mb-1.5">Mes de referencia</label>
+            <input type="month" value={mesReferencia.substring(0, 7)}
+              onChange={(e) => setMesReferencia(e.target.value + '-01')}
+              className="w-full px-3 py-2.5 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" />
+          </div>
+
+          {clienteId && (
             <div>
-              <label className="block text-sm font-medium text-dark-600 mb-1">UC *</label>
-              <select value={form.cliente_uc_id} onChange={(e) => handleChange('cliente_uc_id', e.target.value)}
-                className="w-full px-4 py-2.5 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" required>
+              <label className="block text-sm font-medium text-dark-600 mb-1.5">
+                UC {totalUcs > 0 && <span className="text-dark-400 font-normal">({totalSalvas} de {totalUcs} salvas)</span>}
+              </label>
+              <select value={ucAtiva || ''} onChange={(e) => setUcAtiva(e.target.value ? parseInt(e.target.value) : null)}
+                className="w-full px-3 py-2.5 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50">
                 <option value="">Selecione a UC</option>
                 {ucsCliente.map((uc) => (
                   <option key={uc.id} value={uc.id}>
-                    {uc.nome_uc || 'UC'} - {uc.usinas?.nome || ''} ({uc.numero_uc || ''})
+                    {salvas[uc.id] ? '✓ ' : ''}{uc.nome_uc || 'UC'} - {uc.numero_uc}
                   </option>
                 ))}
               </select>
             </div>
           )}
-          <div>
-            <label className="block text-sm font-medium text-dark-600 mb-1">Mes Referencia *</label>
-            <input type="month" value={form.mes_referencia.substring(0, 7)}
-              onChange={(e) => handleChange('mes_referencia', e.target.value + '-01')}
-              className="w-full px-4 py-2.5 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" required />
-          </div>
-          <div className="border-t border-dark-200 pt-4">
-            <label className="flex items-center gap-2 px-4 py-3 rounded-lg bg-lac-100 hover:bg-lac-200 text-lac-800 text-sm font-medium cursor-pointer transition w-full justify-center">
-              <Upload size={18} />
-              {uploading ? 'Extraindo dados...' : 'Importar PDF da Energisa'}
-              <input type="file" className="hidden" onChange={handleUploadEnergisa} disabled={uploading} accept=".pdf" />
-            </label>
-            <p className="text-xs text-dark-400 text-center mt-2">Preenche automaticamente leitura, injetado e saldo</p>
-          </div>
-          <div className="border-t border-dark-200 pt-4">
-            <h3 className="text-sm font-semibold text-dark-700 mb-3">Dados da Leitura</h3>
-            <div className="grid grid-cols-3 gap-4">
+
+          {ucAtiva && (
+            <>
+              <div className="border-t border-dark-200" />
+
+              <label className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-lac-100 hover:bg-lac-200 text-lac-800 text-sm font-medium cursor-pointer transition">
+                <Upload size={16} />
+                {uploading ? 'Extraindo...' : 'Importar PDF da Energisa'}
+                <input type="file" className="hidden" onChange={handleUploadEnergisa} disabled={uploading} accept=".pdf" />
+              </label>
+
               <div>
-                <label className="block text-xs font-medium text-dark-500 mb-1">Leitura Inicial</label>
+                <label className="block text-sm font-medium text-dark-600 mb-1.5">Leitura inicial</label>
                 <input type="number" value={form.leitura_inicial} onChange={(e) => handleChange('leitura_inicial', e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" step="any" />
+                  className="w-full px-3 py-2.5 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" step="any" />
               </div>
+
               <div>
-                <label className="block text-xs font-medium text-dark-500 mb-1">Leitura Final</label>
+                <label className="block text-sm font-medium text-dark-600 mb-1.5">Leitura final</label>
                 <input type="number" value={form.leitura_final} onChange={(e) => handleChange('leitura_final', e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" step="any" />
+                  className="w-full px-3 py-2.5 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" step="any" />
               </div>
+
               <div>
-                <label className="block text-xs font-medium text-dark-500 mb-1">Consumo</label>
+                <label className="block text-sm font-medium text-dark-600 mb-1.5">Consumo (kWh)</label>
                 <input type="text" value={consumo} disabled
-                  className="w-full px-3 py-2 rounded-lg border border-dark-300 text-sm bg-dark-100 text-dark-500 cursor-not-allowed" />
+                  className="w-full px-3 py-2.5 rounded-lg border border-dark-200 text-sm bg-dark-50 text-dark-500" />
               </div>
-            </div>
-          </div>
-          <div className="border-t border-dark-200 pt-4">
-            <h3 className="text-sm font-semibold text-dark-700 mb-3">Energia e Valores</h3>
-            <div className="grid grid-cols-2 gap-4">
+
               <div>
-                <label className="block text-xs font-medium text-dark-500 mb-1">kWh Injetado *</label>
+                <label className="block text-sm font-medium text-dark-600 mb-1.5">kWh injetado</label>
                 <input type="number" value={form.kwh_injetado} onChange={(e) => handleChange('kwh_injetado', e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" step="any" required />
+                  className="w-full px-3 py-2.5 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" step="any" />
               </div>
+
               <div>
-                <label className="block text-xs font-medium text-dark-500 mb-1">Saldo Acumulado *</label>
+                <label className="block text-sm font-medium text-dark-600 mb-1.5">Saldo acumulado (kWh)</label>
                 <input type="number" value={form.saldo_kwh} onChange={(e) => handleChange('saldo_kwh', e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" step="any" required />
+                  className="w-full px-3 py-2.5 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" step="any" />
               </div>
-            </div>
-            <div className="grid grid-cols-3 gap-4 mt-4">
+
               <div>
-                <label className="block text-xs font-medium text-dark-500 mb-1">Valor kWh</label>
-                <input type="text" value={formatCurrency(valorKwh)} disabled
-                  className="w-full px-3 py-2 rounded-lg border border-dark-300 text-sm bg-dark-100 text-dark-500 cursor-not-allowed" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-dark-500 mb-1">Desconto Sazonal</label>
+                <label className="block text-sm font-medium text-dark-600 mb-1.5">Desconto sazonal (R$)</label>
                 <input type="number" value={form.desconto_sazonal} onChange={(e) => handleChange('desconto_sazonal', e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" step="any" />
+                  className="w-full px-3 py-2.5 rounded-lg border border-dark-300 text-sm focus:outline-none focus:ring-2 focus:ring-solar-500/50" step="any" />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-dark-500 mb-1">Valor Final</label>
-                <input type="text" value={valorFinal ? formatCurrency(parseFloat(valorFinal)) : ''} disabled
-                  className="w-full px-3 py-2 rounded-lg border border-dark-300 text-sm bg-dark-100 text-dark-500 cursor-not-allowed font-semibold" />
+
+              <div className="bg-dark-50 rounded-lg px-4 py-3 flex items-center justify-between">
+                <span className="text-sm text-dark-500">Valor final ({formatCurrency(valorKwh)}/kWh)</span>
+                <span className="text-lg font-bold text-dark-900">{valorFinal ? formatCurrency(parseFloat(valorFinal)) : '-'}</span>
               </div>
-            </div>
-          </div>
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose}
-              className="flex-1 py-2.5 rounded-lg border border-dark-300 text-sm font-medium text-dark-600 hover:bg-dark-50 transition">Cancelar</button>
-            <button type="submit" disabled={saving}
-              className="flex-1 py-2.5 rounded-lg bg-solar-500 hover:bg-solar-600 text-dark-900 text-sm font-semibold transition disabled:opacity-50">
-              {saving ? 'Salvando...' : 'Cadastrar Fatura'}
-            </button>
-          </div>
-        </form>
+
+              <div className="flex gap-3 pt-1">
+                <button type="button" onClick={() => salvarUc(false)} disabled={saving}
+                  className="flex-1 py-2.5 rounded-lg border border-dark-300 text-sm font-medium text-dark-600 hover:bg-dark-50 transition disabled:opacity-50">
+                  {saving ? 'Salvando...' : 'Salvar'}
+                </button>
+                <button type="button" onClick={() => salvarUc(true)} disabled={saving}
+                  className="flex-1 py-2.5 rounded-lg bg-solar-500 hover:bg-solar-600 text-dark-900 text-sm font-semibold transition disabled:opacity-50">
+                  {saving ? '...' : 'Salvar e proxima'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="flex justify-end pt-5 mt-5 border-t border-dark-200">
+          <button type="button" onClick={onClose}
+            className="px-6 py-2.5 rounded-lg border border-dark-300 text-sm font-medium text-dark-600 hover:bg-dark-50 transition">
+            Fechar
+          </button>
+        </div>
       </div>
     </div>
   )

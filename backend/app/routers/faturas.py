@@ -38,126 +38,83 @@ async def gerar_faturas_mes(
     req: GerarFaturasMes,
     user: dict = Depends(require_permission("faturas", "criar")),
 ):
-    """Gera faturas para todos os clientes ativos no mês."""
+    """
+    Gera uma fatura VAZIA por UC ativa no mês, para o Luiz preencher a leitura.
+    Só preenche cliente, UC, vencimento e a leitura inicial (que é a leitura
+    final do mês anterior daquela UC). Não calcula valor — isso é manual.
+    Não recria faturas de UCs que já têm fatura no mês.
+    """
     sb = get_supabase_admin()
     mes = str(req.mes_referencia)
-
-    # Verificar se já existem faturas nesse mês
-    existentes = sb.table("faturas").select("cliente_id").eq("mes_referencia", mes).execute()
-    clientes_com_fatura = {f["cliente_id"] for f in existentes.data or []}
-
-    # Buscar clientes ativos (excluindo agregados)
-    clientes = (
-        sb.table("clientes")
-        .select("*, usinas(id, nome)")
-        .eq("activo", True)
-        .eq("eh_agregado", False)
-        .execute()
-    )
-
-    if not clientes.data:
-        raise HTTPException(status_code=400, detail="Nenhum cliente ativo encontrado")
-
     ano = req.mes_referencia.year
     mes_num = req.mes_referencia.month
-    faturas_geradas = []
 
-    # Calcular primeiro/último dia do mês (igual para todos os clientes)
-    primeiro_dia = f"{ano}-{mes_num:02d}-01"
-    if mes_num == 12:
-        ultimo_dia = f"{ano + 1}-01-01"
+    # mês anterior, pra puxar a leitura inicial
+    if mes_num == 1:
+        mes_ant = f"{ano - 1}-12-01"
     else:
-        ultimo_dia = f"{ano}-{mes_num + 1:02d}-01"
+        mes_ant = f"{ano}-{mes_num - 1:02d}-01"
 
-    # Produção total do mês, por usina (uma única passada, não por cliente)
-    usina_ids = list({c["usina_id"] for c in clientes.data})
-    inversores = (
-        sb.table("inversores").select("id, usina_id").in_("usina_id", usina_ids).execute()
-        if usina_ids else None
-    )
-    usina_para_inversores = {}
-    for inv in (inversores.data if inversores else []) or []:
-        usina_para_inversores.setdefault(inv["usina_id"], []).append(inv["id"])
-
-    todos_inversor_ids = [i for ids in usina_para_inversores.values() for i in ids]
-    producao_por_inversor = {}
-    if todos_inversor_ids:
-        producao = (
-            sb.table("producao_diaria")
-            .select("inversor_id, producao_kwh")
-            .in_("inversor_id", todos_inversor_ids)
-            .gte("data", primeiro_dia)
-            .lt("data", ultimo_dia)
-            .execute()
-        )
-        for r in producao.data or []:
-            producao_por_inversor[r["inversor_id"]] = (
-                producao_por_inversor.get(r["inversor_id"], 0) + r["producao_kwh"]
-            )
-
-    producao_por_usina = {
-        usina_id: sum(producao_por_inversor.get(i, 0) for i in inv_ids)
-        for usina_id, inv_ids in usina_para_inversores.items()
-    }
-
-    # Percentual vigente de cada cliente (uma única passada, não por cliente)
-    cliente_usina_map = {c["id"]: c["usina_id"] for c in clientes.data}
-    percs = (
-        sb.table("percentuais")
-        .select("cliente_id, usina_id, percentual")
-        .in_("cliente_id", list(cliente_usina_map.keys()))
-        .order("data_vigencia", desc=True)
+    # UCs que já têm fatura neste mês (não recriar)
+    existentes = (
+        sb.table("faturas")
+        .select("cliente_uc_id")
+        .eq("mes_referencia", mes)
         .execute()
     )
-    percentual_map = {}
-    for p in percs.data or []:
-        cid = p["cliente_id"]
-        if cid in percentual_map:
+    ucs_com_fatura = {f["cliente_uc_id"] for f in existentes.data or []}
+
+    # leitura final de cada UC no mês anterior -> vira leitura inicial agora
+    faturas_ant = (
+        sb.table("faturas")
+        .select("cliente_uc_id, leitura_final")
+        .eq("mes_referencia", mes_ant)
+        .execute()
+    )
+    leitura_inicial_por_uc = {
+        f["cliente_uc_id"]: f["leitura_final"]
+        for f in faturas_ant.data or []
+        if f.get("leitura_final") is not None
+    }
+
+    # todas as UCs ativas, de clientes ativos e não-agregados
+    ucs = (
+        sb.table("clientes_ucs")
+        .select("id, cliente_id, clientes!inner(id, activo, eh_agregado, valor_kwh, dia_vencimento)")
+        .eq("activo", True)
+        .execute()
+    )
+
+    geradas = 0
+    for uc in ucs.data or []:
+        cliente = uc.get("clientes") or {}
+        if not cliente.get("activo") or cliente.get("eh_agregado"):
             continue
-        if p["usina_id"] != cliente_usina_map.get(cid):
-            continue
-        percentual_map[cid] = p["percentual"]
-
-    for cliente in clientes.data:
-        if cliente["id"] in clientes_com_fatura:
+        if uc["id"] in ucs_com_fatura:
             continue
 
-        usina_id = cliente["usina_id"]
-        producao_total = producao_por_usina.get(usina_id, 0)
-        percentual = percentual_map.get(cliente["id"], 0)
-
-        # Calcular valores
-        kwh_injetado = producao_total * (percentual / 100)
-        valor_kwh = cliente["valor_kwh"] or 0.75
-        valor_total = kwh_injetado * valor_kwh
-        valor_final = valor_total
-
-        # Data de vencimento
-        dia_venc = cliente.get("dia_vencimento", 5)
+        dia_venc = cliente.get("dia_vencimento") or 5
         try:
             data_vencimento = date(ano, mes_num, dia_venc)
         except ValueError:
             data_vencimento = date(ano, mes_num, 28)
 
-        fatura_data = {
-            "cliente_id": cliente["id"],
+        sb.table("faturas").insert({
+            "cliente_id": uc["cliente_id"],
+            "cliente_uc_id": uc["id"],
             "mes_referencia": mes,
-            "kwh_injetado": round(kwh_injetado, 2),
-            "valor_kwh_aplicado": valor_kwh,
-            "valor_total": round(valor_total, 2),
+            "leitura_inicial": leitura_inicial_por_uc.get(uc["id"]),
+            "valor_kwh_aplicado": cliente.get("valor_kwh") or 0.75,
             "desconto_sazonal": 0,
-            "valor_final": round(valor_final, 2),
             "data_vencimento": str(data_vencimento),
             "status": "pendente",
-        }
-
-        result = sb.table("faturas").insert(fatura_data).execute()
-        faturas_geradas.append(result.data[0] if result.data else fatura_data)
+        }).execute()
+        geradas += 1
 
     return {
-        "message": f"{len(faturas_geradas)} fatura(s) gerada(s) para {mes}",
-        "faturas": faturas_geradas,
-        "ignoradas": len(clientes_com_fatura),
+        "message": f"{geradas} fatura(s) vazia(s) gerada(s) para {mes}",
+        "geradas": geradas,
+        "ja_existentes": len(ucs_com_fatura),
     }
 
 
