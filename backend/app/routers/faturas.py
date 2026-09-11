@@ -260,3 +260,97 @@ async def delete_fatura(
     sb = get_supabase_admin()
     sb.table("faturas").delete().eq("id", fatura_id).execute()
     return {"message": "Fatura excluída"}
+
+@router.get("/agrupadas")
+async def list_faturas_agrupadas(
+    mes_referencia: str = Query(None, description="Filtrar por mês (YYYY-MM-DD)"),
+    usina_id: int = Query(None),
+    status: str = Query(None),
+    user: dict = Depends(require_permission("faturas", "visualizar")),
+):
+    """
+    Lista faturas agrupadas por cliente: uma entrada por cliente/mês, com o
+    total somado e as UCs detalhadas dentro. A base continua sendo uma fatura
+    por UC — aqui só agrupamos para exibição.
+    """
+    sb = get_supabase_admin()
+    query = sb.table("faturas").select(
+        "*, clientes(nome, celular, valor_kwh), "
+        "clientes_ucs!inner(nome_uc, numero_uc, usina_id, usinas(nome))"
+    )
+
+    if mes_referencia:
+        query = query.eq("mes_referencia", mes_referencia)
+    if status:
+        query = query.eq("status", status)
+    if usina_id:
+        query = query.eq("clientes_ucs.usina_id", usina_id)
+
+    faturas = query.limit(2000).execute().data or []
+
+    grupos = {}
+    for f in faturas:
+        chave = (f["cliente_id"], f["mes_referencia"])
+        g = grupos.get(chave)
+        if g is None:
+            g = {
+                "cliente_id": f["cliente_id"],
+                "cliente_nome": (f.get("clientes") or {}).get("nome"),
+                "cliente_celular": (f.get("clientes") or {}).get("celular"),
+                "mes_referencia": f["mes_referencia"],
+                "valor_total": 0.0,
+                "kwh_injetado_total": 0.0,
+                "consumo_total": 0.0,
+                "qtd_ucs": 0,
+                "qtd_pagas": 0,
+                "ucs": [],
+            }
+            grupos[chave] = g
+
+        uc = f.get("clientes_ucs") or {}
+        g["valor_total"] += f.get("valor_final") or 0
+        g["kwh_injetado_total"] += f.get("kwh_injetado") or 0
+        g["consumo_total"] += f.get("consumo_kwh") or 0
+        g["qtd_ucs"] += 1
+        if f.get("status") == "paga":
+            g["qtd_pagas"] += 1
+        g["ucs"].append({
+            "fatura_id": f["id"],
+            "nome_uc": uc.get("nome_uc"),
+            "numero_uc": uc.get("numero_uc"),
+            "usina_nome": (uc.get("usinas") or {}).get("nome"),
+            "consumo_kwh": f.get("consumo_kwh"),
+            "kwh_injetado": f.get("kwh_injetado"),
+            "valor_final": f.get("valor_final"),
+            "status": f.get("status"),
+        })
+
+    resultado = []
+    for g in grupos.values():
+        # status do cliente: pago só quando todas as UCs estão pagas
+        g["status"] = "paga" if g["qtd_pagas"] == g["qtd_ucs"] else "pendente"
+        g["ucs"].sort(key=lambda u: u["nome_uc"] or "")
+        resultado.append(g)
+
+    resultado.sort(key=lambda g: g["cliente_nome"] or "")
+    return resultado
+
+
+@router.put("/cliente/{cliente_id}/status")
+async def update_status_cliente(
+    cliente_id: int,
+    mes_referencia: str = Query(..., description="Mês da fatura (YYYY-MM-DD)"),
+    status: str = Query(..., description="pendente, enviada, paga, atrasada"),
+    user: dict = Depends(require_permission("faturas", "editar")),
+):
+    """Atualiza o status de TODAS as UCs de um cliente num mês de uma vez."""
+    sb = get_supabase_admin()
+
+    if status not in ["pendente", "enviada", "paga", "atrasada"]:
+        raise HTTPException(status_code=400, detail="Status inválido")
+
+    sb.table("faturas").update({"status": status}).eq(
+        "cliente_id", cliente_id
+    ).eq("mes_referencia", mes_referencia).execute()
+
+    return {"message": f"Faturas do cliente atualizadas para '{status}'"}
